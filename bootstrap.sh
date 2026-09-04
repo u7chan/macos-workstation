@@ -1,6 +1,22 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# 0) Xcode Command Line Tools 導入（未導入の場合のみ・最大5分待機）
+if ! xcode-select -p >/dev/null 2>&1; then
+  echo "==> installing Xcode Command Line Tools (follow the GUI dialog)"
+  xcode-select --install
+  for _ in $(seq 1 60); do
+    if xcode-select -p >/dev/null 2>&1; then
+      break
+    fi
+    sleep 5
+  done
+  if ! xcode-select -p >/dev/null 2>&1; then
+    echo "ERROR: Xcode Command Line Tools installation did not complete. Run 'xcode-select --install' manually and re-run this script." >&2
+    exit 1
+  fi
+fi
+
 # 1) mise 導入
 if ! command -v mise >/dev/null 2>&1 && [ ! -x "$HOME/.local/bin/mise" ]; then
   echo "==> installing mise"

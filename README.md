@@ -2,9 +2,13 @@
 
 Personal reproducible Mac development environment configuration (MacPorts + mise + chezmoi + macOS defaults).
 
-## Status
+## Setup
 
-- [x] mise — runtime/tool version management (mise.toml, bootstrap.sh)
-- [ ] MacPorts — OS-level packages (not defined yet)
-- [ ] chezmoi — dotfiles management (not yet)
-- [ ] macOS defaults — (not yet)
+```sh
+# clone
+git clone https://github.com/u7chan/macos-workstation.git
+cd macos-workstation
+
+# bootstrap: installs Xcode CLT (if missing) + mise + runtimes
+./bootstrap.sh
+```
