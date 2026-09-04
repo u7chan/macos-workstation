@@ -17,10 +17,3 @@ cd macos-workstation
 # bootstrap: installs mise + runtimes defined in mise.toml
 ./bootstrap.sh
 ```
-
-## Status
-
-- [x] mise — runtime/tool version management (mise.toml, bootstrap.sh)
-- [ ] MacPorts — OS-level packages (not defined yet)
-- [ ] chezmoi — dotfiles management (not yet)
-- [ ] macOS defaults — (not yet)
