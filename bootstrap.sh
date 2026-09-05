@@ -21,10 +21,11 @@ fi
 if [ ! -x /opt/local/bin/port ]; then
   echo "==> installing MacPorts (sudo required)"
   sudo -v
-  MP_RELEASE="$(curl -fsSL https://api.github.com/repos/macports/macports-base/releases/latest | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p')"
+  MP_API="$(curl -fsSL https://api.github.com/repos/macports/macports-base/releases/latest)"
+  MP_RELEASE="$(printf '%s' "$MP_API" | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p')"
   MP_VERSION="${MP_RELEASE#v}"
   MACOS_MAJOR="$(sw_vers -productVersion | cut -d. -f1)"
-  MP_PKG="$(curl -fsSL "https://api.github.com/repos/macports/macports-base/releases/latest" | grep -o "MacPorts-${MP_VERSION}-${MACOS_MAJOR}-[A-Za-z]*\.pkg" | head -1)"
+  MP_PKG="$(printf '%s' "$MP_API" | grep -o "MacPorts-${MP_VERSION}-${MACOS_MAJOR}-[A-Za-z]*\.pkg" | head -1)"
   if [ -z "$MP_PKG" ]; then
     echo "ERROR: no MacPorts package found for macOS ${MACOS_MAJOR}" >&2
     exit 1
@@ -36,10 +37,15 @@ if [ ! -x /opt/local/bin/port ]; then
 fi
 export PATH="/opt/local/bin:$PATH"
 
-# 2) ポート導入（macports/ports.txt に従う。導入済みポートはスキップされる）
-if [ -s macports/ports.txt ]; then
-  echo "==> sudo port -N install ($(tr '\n' ' ' < macports/ports.txt))"
-  sudo port -N install $(cat macports/ports.txt)
+# 2) ポート導入（macports/ports.txt に従う。空行・# コメント行は無視し、導入済みポートはスキップされる）
+PORTS=""
+while IFS= read -r line; do
+  case "$line" in ''|\#*) continue ;; esac
+  PORTS="$PORTS $line"
+done < macports/ports.txt
+if [ -n "$PORTS" ]; then
+  echo "==> sudo port -N install ($PORTS)"
+  sudo port -N install $PORTS
   if [ -x /opt/local/bin/git ]; then
     echo "==> MacPorts git: $(/opt/local/bin/git --version)"
   fi
