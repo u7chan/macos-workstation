@@ -29,9 +29,15 @@ cd macos-workstation
 git clone https://github.com/u7chan/macos-workstation.git
 cd macos-workstation
 
-# bootstrap: installs Xcode CLT (if missing) + mise + runtimes
+# bootstrap: installs Xcode CLT (if missing) + MacPorts + dotfiles (chezmoi) + mise + runtimes
 ./bootstrap.sh
 ```
+
+## Dotfiles
+
+- `~/.zprofile` (MacPorts PATH) / `~/.zshrc` (mise activation) / `~/.config/mise/config.toml` (mise global config) are managed by chezmoi
+- The source of truth is the `home/` directory in this repository. bootstrap converges the machine with `chezmoi apply --source=./home --force`
+- Manual edits on the machine are treated as temporary experiments. To keep a change, edit a file under `home/` and submit a PR
 
 ## Update
 
