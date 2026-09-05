@@ -10,7 +10,7 @@
 ## Tech Stack
 
 - [x] mise — runtime/tool version management (mise.toml, bootstrap.sh)
-- [ ] MacPorts — OS-level packages (TODO)
+- [ ] MacPorts — OS-level packages incl. git (TODO)
 - [ ] chezmoi — dotfiles management (TODO)
 - [ ] macOS defaults — (TODO)
 
