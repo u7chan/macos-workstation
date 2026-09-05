@@ -37,18 +37,6 @@ if [ ! -x /opt/local/bin/port ]; then
 fi
 export PATH="/opt/local/bin:$PATH"
 
-# 1.5) MacPorts の PATH を ~/.zprofile に追記（ログインシェルで /opt/local/bin を優先するため）
-#     (sudo installer 経由だと postflight がユーザーのシェル設定を編集しない場合があるため、
-#      bootstrap 側でも保証する。TODO: chezmoi 導入後に dotfiles 側へ移行する)
-if ! grep -qs '/opt/local/bin' "$HOME/.zprofile" 2>/dev/null; then
-  echo "==> append MacPorts PATH to ~/.zprofile"
-  {
-    echo ""
-    echo "# TODO: MacPorts PATH (bootstrap.sh 追加分。chezmoi 導入後に移行)"
-    echo 'export PATH="/opt/local/bin:/opt/local/sbin:$PATH"'
-  } >>"$HOME/.zprofile"
-fi
-
 # 2) ポート導入（macports/ports.txt に従う。空行・# コメント行は無視し、導入済みポートはスキップされる）
 PORTS=""
 while IFS= read -r line; do
@@ -63,33 +51,21 @@ if [ -n "$PORTS" ]; then
   fi
 fi
 
-# 3) mise 導入
+# 3) dotfiles 適用（chezmoi。source はリポジトリの home/ ディレクトリ）
+#     ~/.zprofile（MacPorts PATH）/ ~/.zshrc（mise activate）/ ~/.config/mise/config.toml
+#     （グローバル設定）を正本（GitHub）へ収束させる。
+#     --force: マシン上の手編集は一時的な実験扱いとし、正本で上書きする（収束方式）
+echo "==> chezmoi apply (source: $(pwd)/home)"
+chezmoi apply --source="$(pwd)/home" --force
+
+# 4) mise 導入
 if ! command -v mise >/dev/null 2>&1 && [ ! -x "$HOME/.local/bin/mise" ]; then
   echo "==> installing mise"
   curl https://mise.run | sh
 fi
 export PATH="$HOME/.local/bin:$PATH"
 
-# 4) zsh 連携 (TODO: 暫定対応。chezmoi 導入後に dotfiles 側へ移行する)
-if ! grep -qs 'mise activate zsh' "$HOME/.zshrc"; then
-  echo "==> append mise activation to ~/.zshrc"
-  {
-    echo ""
-    echo "# TODO: mise activate (bootstrap.sh 追加分。chezmoi 導入後に移行)"
-    echo 'eval "$(~/.local/bin/mise activate zsh)"'
-  } >>"$HOME/.zshrc"
-fi
-
-# 5) グローバル設定: リポジトリの mise.toml を ~/.config/mise/config.toml に配布
-#    どのディレクトリでも node / python などを使用できるようにする
-#    (TODO: 配布元は chezmoi 導入後に dotfiles 側へ移行する)
-if ! cmp -s mise.toml "$HOME/.config/mise/config.toml"; then
-  echo "==> install mise global config (~/.config/mise/config.toml)"
-  mkdir -p "$HOME/.config/mise"
-  cp mise.toml "$HOME/.config/mise/config.toml"
-fi
-
-# 6) ランタイム導入 (グローバル + リポジトリ設定に従う)
+# 5) ランタイム導入（~/.config/mise/config.toml のグローバル設定に従う。ステップ3 で適用済み）
 echo "==> mise install"
 mise install
 

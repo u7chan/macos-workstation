@@ -1,0 +1,2 @@
+# chezmoi: MacPorts PATH（正本 = macos-workstation/home/dot_zprofile）
+export PATH="/opt/local/bin:/opt/local/sbin:$PATH"

@@ -29,15 +29,23 @@ cd macos-workstation
 git clone https://github.com/u7chan/macos-workstation.git
 cd macos-workstation
 
-# bootstrap: installs Xcode CLT (if missing) + mise + runtimes
+# bootstrap: installs Xcode CLT (if missing) + MacPorts + dotfiles (chezmoi) + mise + runtimes
 ./bootstrap.sh
 ```
+
+## Dotfiles
+
+- `~/.zprofile`（MacPorts PATH）/ `~/.zshrc`（mise activate）/ `~/.config/mise/config.toml`（mise グローバル設定）を chezmoi で管理する
+- 正本はリポジトリの `home/` ディレクトリ。bootstrap が `chezmoi apply --source=./home --force` でマシンへ収束させる
+- マシン上の手編集は一時的な実験扱い。残したい変更は `home/` を編集して PR で取り込む
 
 ## Update
 
 ```sh
 git pull
 ./bootstrap.sh
+# or: ./bootstrap.sh のうち dotfiles 適用だけなら:
+# chezmoi apply --source="$PWD/home" --force
 ```
 
 ## Cleanup

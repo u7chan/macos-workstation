@@ -1,0 +1,2 @@
+# chezmoi: mise activate（正本 = macos-workstation/home/dot_zshrc）
+eval "$(~/.local/bin/mise activate zsh)"
