@@ -17,14 +17,60 @@ if ! xcode-select -p >/dev/null 2>&1; then
   fi
 fi
 
-# 1) mise 導入
+# 1) MacPorts 導入（OS寄りパッケージ管理。未導入の場合のみ）
+if [ ! -x /opt/local/bin/port ]; then
+  echo "==> installing MacPorts (sudo required)"
+  sudo -v
+  MP_API="$(curl -fsSL https://api.github.com/repos/macports/macports-base/releases/latest)"
+  MP_RELEASE="$(printf '%s' "$MP_API" | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p')"
+  MP_VERSION="${MP_RELEASE#v}"
+  MACOS_MAJOR="$(sw_vers -productVersion | cut -d. -f1)"
+  MP_PKG="$(printf '%s' "$MP_API" | grep -o "MacPorts-${MP_VERSION}-${MACOS_MAJOR}-[A-Za-z]*\.pkg" | head -1)"
+  if [ -z "$MP_PKG" ]; then
+    echo "ERROR: no MacPorts package found for macOS ${MACOS_MAJOR}" >&2
+    exit 1
+  fi
+  echo "==> downloading ${MP_PKG}"
+  curl -fL -o "/tmp/${MP_PKG}" "https://github.com/macports/macports-base/releases/download/${MP_RELEASE}/${MP_PKG}"
+  sudo installer -pkg "/tmp/${MP_PKG}" -target /
+  rm -f "/tmp/${MP_PKG}"
+fi
+export PATH="/opt/local/bin:$PATH"
+
+# 1.5) MacPorts の PATH を ~/.zprofile に追記（ログインシェルで /opt/local/bin を優先するため）
+#     (sudo installer 経由だと postflight がユーザーのシェル設定を編集しない場合があるため、
+#      bootstrap 側でも保証する。TODO: chezmoi 導入後に dotfiles 側へ移行する)
+if ! grep -qs '/opt/local/bin' "$HOME/.zprofile" 2>/dev/null; then
+  echo "==> append MacPorts PATH to ~/.zprofile"
+  {
+    echo ""
+    echo "# TODO: MacPorts PATH (bootstrap.sh 追加分。chezmoi 導入後に移行)"
+    echo 'export PATH="/opt/local/bin:/opt/local/sbin:$PATH"'
+  } >>"$HOME/.zprofile"
+fi
+
+# 2) ポート導入（macports/ports.txt に従う。空行・# コメント行は無視し、導入済みポートはスキップされる）
+PORTS=""
+while IFS= read -r line; do
+  case "$line" in ''|\#*) continue ;; esac
+  PORTS="$PORTS $line"
+done < macports/ports.txt
+if [ -n "$PORTS" ]; then
+  echo "==> sudo port -N install ($PORTS)"
+  sudo port -N install $PORTS
+  if [ -x /opt/local/bin/git ]; then
+    echo "==> MacPorts git: $(/opt/local/bin/git --version)"
+  fi
+fi
+
+# 3) mise 導入
 if ! command -v mise >/dev/null 2>&1 && [ ! -x "$HOME/.local/bin/mise" ]; then
   echo "==> installing mise"
   curl https://mise.run | sh
 fi
 export PATH="$HOME/.local/bin:$PATH"
 
-# 2) zsh 連携 (TODO: 暫定対応。chezmoi 導入後に dotfiles 側へ移行する)
+# 4) zsh 連携 (TODO: 暫定対応。chezmoi 導入後に dotfiles 側へ移行する)
 if ! grep -qs 'mise activate zsh' "$HOME/.zshrc"; then
   echo "==> append mise activation to ~/.zshrc"
   {
@@ -34,7 +80,7 @@ if ! grep -qs 'mise activate zsh' "$HOME/.zshrc"; then
   } >>"$HOME/.zshrc"
 fi
 
-# 3) グローバル設定: リポジトリの mise.toml を ~/.config/mise/config.toml に配布
+# 5) グローバル設定: リポジトリの mise.toml を ~/.config/mise/config.toml に配布
 #    どのディレクトリでも node / python などを使用できるようにする
 #    (TODO: 配布元は chezmoi 導入後に dotfiles 側へ移行する)
 if ! cmp -s mise.toml "$HOME/.config/mise/config.toml"; then
@@ -43,10 +89,14 @@ if ! cmp -s mise.toml "$HOME/.config/mise/config.toml"; then
   cp mise.toml "$HOME/.config/mise/config.toml"
 fi
 
-# 4) ランタイム導入 (グローバル + リポジトリ設定に従う)
+# 6) ランタイム導入 (グローバル + リポジトリ設定に従う)
 echo "==> mise install"
 mise install
 
 echo "==> installed versions"
 mise exec -- node -v
 mise exec -- python3 -V
+
+echo "==> next: restart the terminal, then verify MacPorts git takes over:"
+echo "    command -v git   # expect /opt/local/bin/git"
+echo "    git --version"
