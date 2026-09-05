@@ -34,7 +34,16 @@ if ! grep -qs 'mise activate zsh' "$HOME/.zshrc"; then
   } >>"$HOME/.zshrc"
 fi
 
-# 3) ランタイム導入 (mise.toml に従う)
+# 3) グローバル設定: リポジトリの mise.toml を ~/.config/mise/config.toml に配布
+#    どのディレクトリでも node / python などを使用できるようにする
+#    (TODO: 配布元は chezmoi 導入後に dotfiles 側へ移行する)
+if ! cmp -s mise.toml "$HOME/.config/mise/config.toml"; then
+  echo "==> install mise global config (~/.config/mise/config.toml)"
+  mkdir -p "$HOME/.config/mise"
+  cp mise.toml "$HOME/.config/mise/config.toml"
+fi
+
+# 4) ランタイム導入 (グローバル + リポジトリ設定に従う)
 echo "==> mise install"
 mise install
 

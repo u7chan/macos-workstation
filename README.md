@@ -39,3 +39,15 @@ cd macos-workstation
 git pull
 ./bootstrap.sh
 ```
+
+## Cleanup
+
+Remove globally configured tools and their runtimes:
+
+```sh
+# remove from global config (~/.config/mise/config.toml) and uninstall runtimes
+mise unuse -g node@26 python@3.13 uv@latest
+
+# remove all installed runtimes (keeps config)
+mise uninstall --all
+```
