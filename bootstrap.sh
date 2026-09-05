@@ -37,6 +37,18 @@ if [ ! -x /opt/local/bin/port ]; then
 fi
 export PATH="/opt/local/bin:$PATH"
 
+# 1.5) MacPorts の PATH を ~/.zprofile に追記（ログインシェルで /opt/local/bin を優先するため）
+#     (sudo installer 経由だと postflight がユーザーのシェル設定を編集しない場合があるため、
+#      bootstrap 側でも保証する。TODO: chezmoi 導入後に dotfiles 側へ移行する)
+if ! grep -qs '/opt/local/bin' "$HOME/.zprofile" 2>/dev/null; then
+  echo "==> append MacPorts PATH to ~/.zprofile"
+  {
+    echo ""
+    echo "# TODO: MacPorts PATH (bootstrap.sh 追加分。chezmoi 導入後に移行)"
+    echo 'export PATH="/opt/local/bin:/opt/local/sbin:$PATH"'
+  } >>"$HOME/.zprofile"
+fi
+
 # 2) ポート導入（macports/ports.txt に従う。空行・# コメント行は無視し、導入済みポートはスキップされる）
 PORTS=""
 while IFS= read -r line; do
