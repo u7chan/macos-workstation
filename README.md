@@ -35,9 +35,9 @@ cd macos-workstation
 
 ## Dotfiles
 
-- `~/.zprofile`（MacPorts PATH）/ `~/.zshrc`（mise activate）/ `~/.config/mise/config.toml`（mise グローバル設定）を chezmoi で管理する
-- 正本はリポジトリの `home/` ディレクトリ。bootstrap が `chezmoi apply --source=./home --force` でマシンへ収束させる
-- マシン上の手編集は一時的な実験扱い。残したい変更は `home/` を編集して PR で取り込む
+- `~/.zprofile` (MacPorts PATH) / `~/.zshrc` (mise activation) / `~/.config/mise/config.toml` (mise global config) are managed by chezmoi
+- The source of truth is the `home/` directory in this repository. bootstrap converges the machine with `chezmoi apply --source=./home --force`
+- Manual edits on the machine are treated as temporary experiments. To keep a change, edit a file under `home/` and submit a PR
 
 ## Update
 
