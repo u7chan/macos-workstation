@@ -44,8 +44,6 @@ cd macos-workstation
 ```sh
 git pull
 ./bootstrap.sh
-# or: ./bootstrap.sh のうち dotfiles 適用だけなら:
-# chezmoi apply --source="$PWD/home" --force
 ```
 
 ## Cleanup
