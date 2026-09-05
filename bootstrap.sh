@@ -65,7 +65,7 @@ if ! command -v mise >/dev/null 2>&1 && [ ! -x "$HOME/.local/bin/mise" ]; then
 fi
 export PATH="$HOME/.local/bin:$PATH"
 
-# 5) ランタイム導入（~/.config/mise/config.toml のグローバル設定に従う。ステップ3 で適用済み）
+# 5) ランタイム導入（ステップ3 で適用済みのグローバル設定に従う）
 echo "==> mise install"
 mise install
 

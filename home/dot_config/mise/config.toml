@@ -1,4 +1,3 @@
-# chezmoi: mise グローバル設定（正本 = macos-workstation/home/dot_config/mise/config.toml）
 [tools]
 node = "26"
 python = "3.13"
