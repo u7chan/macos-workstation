@@ -51,10 +51,7 @@ if [ -n "$PORTS" ]; then
   fi
 fi
 
-# 3) dotfiles 適用（chezmoi。source はリポジトリの home/ ディレクトリ）
-#     ~/.zprofile（MacPorts PATH）/ ~/.zshrc（mise activate）/ ~/.config/mise/config.toml
-#     （グローバル設定）を正本（GitHub）へ収束させる。
-#     --force: マシン上の手編集は一時的な実験扱いとし、正本で上書きする（収束方式）
+# 3) dotfiles 適用（chezmoi・source はリポジトリの home/）
 echo "==> chezmoi apply (source: $(pwd)/home)"
 chezmoi apply --source="$(pwd)/home" --force
 
