@@ -13,7 +13,7 @@
 - [x] mise — runtime/tool version management (home/dot_config/mise/config.toml, bootstrap.sh)
 - [x] MacPorts — OS-level packages incl. git, chezmoi (macports/ports.txt, bootstrap.sh)
 - [x] chezmoi — dotfiles management (home/, bootstrap.sh)
-- [ ] macOS defaults — (TODO)
+- [x] macOS defaults — (macos/defaults.sh, bootstrap.sh)
 
 ## References
 
