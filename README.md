@@ -45,6 +45,23 @@ cd macos-workstation
 - The source of truth is the `home/` directory in this repository. bootstrap converges the machine with `chezmoi apply --source=./home --force`
 - Manual edits on the machine are treated as temporary experiments. To keep a change, edit a file under `home/` and submit a PR
 
+## macOS defaults
+
+GUI-only macOS settings scripted to avoid manual reconfiguration on a new Mac.
+
+- Applied by bootstrap, or run standalone:
+
+  ```sh
+  ./macos/defaults.sh
+  ```
+
+- Idempotent: every run re-applies all settings and verifies each one by reading the value back (auto-verification, OK/NG)
+- Currently applied:
+  - Trackpad tracking speed (max): `com.apple.trackpad.scaling = 3.0`
+  - Finder: show all filename extensions: `AppleShowAllExtensions = true`
+
+> Note: some settings (e.g. trackpad speed) may require logging out and back in to take effect.
+
 ## Update
 
 ```sh

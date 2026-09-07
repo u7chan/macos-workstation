@@ -70,6 +70,10 @@ echo "==> installed versions"
 mise exec -- node -v
 mise exec -- python3 -V
 
+# 6) macOS defaults 適用（GUI で手動設定している設定。冪等・自動検証）
+echo "==> macOS defaults"
+./macos/defaults.sh
+
 echo "==> next: restart the terminal, then verify MacPorts git takes over:"
 echo "    command -v git   # expect /opt/local/bin/git"
 echo "    git --version"
