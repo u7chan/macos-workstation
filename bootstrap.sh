@@ -69,6 +69,7 @@ mise install
 echo "==> installed versions"
 mise exec -- node -v
 mise exec -- python3 -V
+mise exec -- pi --version
 
 # 6) macOS defaults 適用（GUI で手動設定している設定。冪等・自動検証）
 echo "==> macOS defaults"

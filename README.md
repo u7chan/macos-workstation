@@ -69,13 +69,19 @@ git pull
 ./bootstrap.sh
 ```
 
+Tools pinned to `latest` (uv, Pi) are not upgraded by `mise install`. Update them explicitly:
+
+```sh
+mise up
+```
+
 ## Cleanup
 
 Remove globally configured tools and their runtimes:
 
 ```sh
 # remove from global config (~/.config/mise/config.toml) and uninstall runtimes
-mise unuse -g node@26 python@3.13 uv@latest
+mise unuse -g node@26 python@3.13 uv@latest "npm:@earendil-works/pi-coding-agent@latest"
 
 # remove all installed runtimes (keeps config)
 mise uninstall --all
