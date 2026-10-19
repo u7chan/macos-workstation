@@ -10,7 +10,7 @@
 
 ## Tech Stack
 
-- [x] mise — runtime/tool version management (home/dot_config/mise/config.toml, bootstrap.sh)
+- [x] mise — runtime/tool version management incl. GitHub CLI via Aqua (home/dot_config/mise/config.toml, bootstrap.sh)
 - [x] MacPorts — OS-level packages incl. git, chezmoi (macports/ports.txt, bootstrap.sh)
 - [x] chezmoi — dotfiles management (home/, bootstrap.sh)
 - [x] macOS defaults — (macos/defaults.sh, bootstrap.sh)
