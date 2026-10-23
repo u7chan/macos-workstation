@@ -41,18 +41,21 @@ cd macos-workstation
 
 ## Dotfiles
 
-- `~/.zprofile` (MacPorts PATH) / `~/.zshrc` (mise activation) / `~/.config/mise/config.toml` (mise global config) are managed by chezmoi
-- `~/Library/Application Support/com.mitchellh.ghostty/config` (Ghostty font settings) is also managed by chezmoi
-- The source of truth is the `home/` directory in this repository. bootstrap converges the machine with `chezmoi apply --source=./home --force`
+The [`home/`](home/) directory is the source of truth for dotfiles. chezmoi maps these definitions to their destinations:
+
+| Definition | Destination | Purpose |
+| --- | --- | --- |
+| [`home/dot_zprofile`](home/dot_zprofile) | `~/.zprofile` | MacPorts PATH |
+| [`home/dot_zshrc`](home/dot_zshrc) | `~/.zshrc` | mise activation |
+| [`home/dot_config/mise/config.toml`](home/dot_config/mise/config.toml) | `~/.config/mise/config.toml` | Tool declarations and version constraints |
+| [Ghostty configuration](home/Library/Application%20Support/com.mitchellh.ghostty/config) | `~/Library/Application Support/com.mitchellh.ghostty/config` | Ghostty font settings |
+
+- bootstrap converges the machine with `chezmoi apply --source=./home --force`
 - Manual edits on the machine are treated as temporary experiments. To keep a change, edit a file under `home/` and submit a PR
 
 ### Ghostty
 
-`./bootstrap.sh` applies `home/Library/Application Support/com.mitchellh.ghostty/config` to Ghostty's macOS-native configuration path as part of the dotfiles step.
-
-- Font size: 20 pt
-- Font families: Menlo, with Hiragino Sans for Japanese (both included with macOS)
-- Font thickening enabled
+Font settings are defined in the [Ghostty configuration](home/Library/Application%20Support/com.mitchellh.ghostty/config). Edit that file to change them; `./bootstrap.sh` applies it to Ghostty's macOS-native configuration path as part of the dotfiles step.
 
 Restart Ghostty after applying font changes. Ghostty itself must be installed separately.
 
@@ -67,11 +70,9 @@ GUI-only macOS settings scripted to avoid manual reconfiguration on a new Mac.
   ```
 
 - Idempotent: every run re-applies all settings and verifies each one by reading the value back (auto-verification, OK/NG)
-- Currently applied:
-  - Trackpad tracking speed (max): `com.apple.trackpad.scaling = 3.0`
-  - Finder: show all filename extensions: `AppleShowAllExtensions = true`
+- The configured settings and their values are defined in [`macos/defaults.sh`](macos/defaults.sh). Edit that script rather than maintaining a separate settings list here.
 
-> Note: some settings (e.g. trackpad speed) may require logging out and back in to take effect.
+> Note: some settings may require logging out and back in to take effect.
 
 ## Update
 
@@ -80,20 +81,41 @@ git pull
 ./bootstrap.sh
 ```
 
-Tools pinned to `latest` (uv, Pi) are not upgraded by `mise install`. Update them explicitly:
+Tool declarations and version constraints are defined in the [mise configuration](home/dot_config/mise/config.toml). `mise install` installs missing versions but does not upgrade installed versions that still satisfy those constraints.
+
+To upgrade the globally configured tools within their declared constraints, without changing the declarations:
 
 ```sh
-mise up
+mise -C "$HOME" up
 ```
+
+OS-level package declarations are maintained separately in [`macports/ports.txt`](macports/ports.txt).
 
 ## Cleanup
 
-Remove globally configured tools and their runtimes:
+### Remove tool declarations and unused installations
+
+To stop managing tools, remove their declarations from the [mise configuration](home/dot_config/mise/config.toml), then apply the dotfiles from the repository root and preview which installed versions are now unused:
 
 ```sh
-# remove from global config (~/.config/mise/config.toml) and uninstall runtimes
-mise unuse -g node@26 python@3.13 uv@latest "npm:@earendil-works/pi-coding-agent@latest"
+chezmoi apply --source=./home --force
+mise prune --dry-run
+```
 
-# remove all installed runtimes (keeps config)
+Review the preview before running `mise prune`. Versions still referenced by other tracked configurations are retained. This uses the configuration itself as the tool list, so no separate list of tool names or versions is needed.
+
+### Uninstall all tools while keeping configuration
+
+To remove **every installed mise tool and runtime**, including those not managed by this repository, preview the operation first:
+
+```sh
+mise uninstall --all --dry-run
+```
+
+After reviewing the preview:
+
+```sh
 mise uninstall --all
 ```
+
+This covers all installed tools, regardless of backend, and keeps both the applied configuration and the repository definitions. Running `./bootstrap.sh` reinstalls the configured tools.
