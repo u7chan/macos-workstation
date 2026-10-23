@@ -1,0 +1,5 @@
+["Library/Fonts/MesloLGMNerdFont"]
+type = "archive"
+url = "https://github.com/ryanoasis/nerd-fonts/releases/download/v3.4.0/Meslo.tar.xz"
+checksum.sha256 = "a57936d96aefb5cfff0660f3294210ee04705529af6cf811e2274b0923a03939"
+include = ["MesloLGMNerdFont-*.ttf", "LICENSE.txt"]
