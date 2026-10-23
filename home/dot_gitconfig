@@ -2,3 +2,26 @@
     name = u7chan
     email = 34462401+u7chan@users.noreply.github.com
     useConfigOnly = true
+
+[alias]
+    s = status
+    ss = status -s
+    b = branch
+    sw = switch
+    swc = switch -c
+    swm = switch main
+    f = fetch --verbose
+    fa = fetch --all --verbose
+    fp = fetch --prune --verbose
+    fap = fetch --all --prune --verbose
+    pl = pull --verbose
+    plr = pull --rebase --verbose
+    plm = !git fetch origin main --verbose
+    p = push --verbose
+    puo = push -u origin HEAD
+    cm = commit
+    cma = commit --amend --no-edit
+    lg = log --oneline --graph --decorate
+    last = log -1 HEAD
+    unstage = restore --staged .
+    discard = restore .
