@@ -45,7 +45,7 @@ The [`home/`](home/) directory is the source of truth for dotfiles. chezmoi maps
 
 | Definition | Destination | Purpose |
 | --- | --- | --- |
-| [`home/dot_gitconfig`](home/dot_gitconfig) | `~/.gitconfig` | Git commit identity and explicit-identity enforcement |
+| [`home/dot_gitconfig`](home/dot_gitconfig) | `~/.gitconfig` | Git commit identity, aliases, and explicit-identity enforcement |
 | [`home/dot_zprofile`](home/dot_zprofile) | `~/.zprofile` | MacPorts PATH |
 | [`home/dot_zshrc`](home/dot_zshrc) | `~/.zshrc` | mise activation |
 | [`home/dot_config/mise/config.toml`](home/dot_config/mise/config.toml) | `~/.config/mise/config.toml` | Tool declarations and version constraints |
@@ -56,7 +56,7 @@ The [`home/`](home/) directory is the source of truth for dotfiles. chezmoi maps
 
 ### Git
 
-Git commit identity and explicit-identity enforcement are defined in the [Git configuration](home/dot_gitconfig). The managed identity uses a public GitHub username and GitHub-provided noreply address, not a private email address or credential. Bootstrap applies this file through chezmoi; repository-local Git settings can override the managed defaults when needed.
+Git commit identity, aliases, and explicit-identity enforcement are defined in the [Git configuration](home/dot_gitconfig). The managed identity uses a public GitHub username and GitHub-provided noreply address, not a private email address or credential. Bootstrap applies this file through chezmoi; repository-local Git settings can override the managed defaults when needed.
 
 ### Ghostty
 
