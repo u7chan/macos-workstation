@@ -35,7 +35,7 @@ cd macos-workstation
 git clone https://github.com/u7chan/macos-workstation.git
 cd macos-workstation
 
-# bootstrap: installs Xcode CLT (if missing) + MacPorts + dotfiles (chezmoi) + mise + runtimes
+# bootstrap: installs Xcode CLT (if missing) + MacPorts + dotfiles (chezmoi) + mise + runtimes + agent skills
 ./bootstrap.sh
 ```
 
@@ -63,6 +63,14 @@ Git commit identity, aliases, and explicit-identity enforcement are defined in t
 Font settings are defined in the [Ghostty configuration](home/Library/Application%20Support/com.mitchellh.ghostty/config). Edit that file to change them; `./bootstrap.sh` applies it to Ghostty's macOS-native configuration path as part of the dotfiles step.
 
 Restart Ghostty after applying font changes. Ghostty itself must be installed separately.
+
+## Agent skills
+
+Bootstrap installs or updates the skill package using the source and branch defined in [`agents/sync-skills.sh`](agents/sync-skills.sh). Each run resolves the upstream branch head to a commit and installs that revision through pi; upstream skill changes do not require a change to this repository. The revision is printed and saved in pi's user package settings. Development checkouts are not used or modified, and other pi settings are preserved.
+
+Run bootstrap between tasks, then `/reload` or restart every running pi session before using the updated skills.
+
+Package installation does not provision skill-specific dependencies or guarantee macOS compatibility; consult the upstream package's prerequisites before using its harness scripts.
 
 ## macOS defaults
 
