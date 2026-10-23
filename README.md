@@ -35,7 +35,7 @@ cd macos-workstation
 git clone https://github.com/u7chan/macos-workstation.git
 cd macos-workstation
 
-# bootstrap: installs Xcode CLT (if missing) + MacPorts + dotfiles (chezmoi) + mise + runtimes + agent skills
+# bootstrap: installs Xcode CLT (if missing) + MacPorts + dotfiles and fonts (chezmoi) + mise + runtimes + agent skills
 ./bootstrap.sh
 ```
 
@@ -51,6 +51,7 @@ The [`home/`](home/) directory is the source of truth for dotfiles. chezmoi maps
 | [`home/dot_config/mise/config.toml`](home/dot_config/mise/config.toml) | `~/.config/mise/config.toml` | Tool declarations and version constraints |
 | [Harness launcher](home/dot_local/bin/executable_agent-harness-exec) | `~/.local/bin/agent-harness-exec` | Process-local environment for upstream GitHub/review harnesses |
 | [Harness invocation rule](home/private_dot_pi/private_agent/modify_private_AGENTS.md) | `~/.pi/agent/AGENTS.md` | Updates only a marked instruction block, preserving other instructions |
+| [Font archive declaration](home/.chezmoiexternal.toml) | User font directory declared in the file | Pinned font download, checksum, and included files |
 | [Ghostty configuration](home/Library/Application%20Support/com.mitchellh.ghostty/config) | `~/Library/Application Support/com.mitchellh.ghostty/config` | Ghostty font settings |
 
 - bootstrap converges the machine with `chezmoi apply --source=./home --force`
@@ -62,9 +63,11 @@ Git commit identity, aliases, and explicit-identity enforcement are defined in t
 
 ### Ghostty
 
-Font settings are defined in the [Ghostty configuration](home/Library/Application%20Support/com.mitchellh.ghostty/config). Edit that file to change them; `./bootstrap.sh` applies it to Ghostty's macOS-native configuration path as part of the dotfiles step.
+Font settings are defined in the [Ghostty configuration](home/Library/Application%20Support/com.mitchellh.ghostty/config). The [font archive declaration](home/.chezmoiexternal.toml) defines the upstream release URL, SHA-256 checksum, destination, and included font and license files. Font binaries are downloaded by chezmoi, not committed to this repository; unrelated user fonts are left untouched.
 
-Restart Ghostty after applying font changes. Ghostty itself must be installed separately.
+`./bootstrap.sh` installs the declared fonts and applies the configuration to Ghostty's macOS-native path as part of the dotfiles step. chezmoi caches the pinned archive and verifies its checksum; repeated runs converge the managed files without installing duplicate copies. To update the font release, change the URL and checksum together in the declaration, checking the checksum against the upstream release's `SHA-256.txt`.
+
+Restart Ghostty after applying font changes. Ghostty itself must be installed separately. For a real-machine check, run `ghostty +list-fonts` and confirm that the family configured above is available, then check regular, bold, italic, Japanese text, and Nerd Font symbols in a new terminal window.
 
 ## Agent skills
 
