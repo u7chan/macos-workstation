@@ -42,8 +42,19 @@ cd macos-workstation
 ## Dotfiles
 
 - `~/.zprofile` (MacPorts PATH) / `~/.zshrc` (mise activation) / `~/.config/mise/config.toml` (mise global config) are managed by chezmoi
+- `~/Library/Application Support/com.mitchellh.ghostty/config` (Ghostty font settings) is also managed by chezmoi
 - The source of truth is the `home/` directory in this repository. bootstrap converges the machine with `chezmoi apply --source=./home --force`
 - Manual edits on the machine are treated as temporary experiments. To keep a change, edit a file under `home/` and submit a PR
+
+### Ghostty
+
+`./bootstrap.sh` applies `home/Library/Application Support/com.mitchellh.ghostty/config` to Ghostty's macOS-native configuration path as part of the dotfiles step.
+
+- Font size: 20 pt
+- Font families: Menlo, with Hiragino Sans for Japanese (both included with macOS)
+- Font thickening enabled
+
+Restart Ghostty after applying font changes. Ghostty itself must be installed separately.
 
 ## macOS defaults
 

@@ -51,7 +51,7 @@ if [ -n "$PORTS" ]; then
   fi
 fi
 
-# 3) dotfiles 適用（chezmoi・source はリポジトリの home/）
+# 3) dotfiles 適用（Ghostty のフォント設定を含む・source はリポジトリの home/）
 echo "==> chezmoi apply (source: $(pwd)/home)"
 chezmoi apply --source="$(pwd)/home" --force
 
@@ -76,6 +76,7 @@ mise exec -- gh --version
 echo "==> macOS defaults"
 ./macos/defaults.sh
 
+echo "==> next: restart Ghostty to load the managed font settings (if installed)"
 echo "==> next: restart the terminal, then verify MacPorts git takes over:"
 echo "    command -v git   # expect /opt/local/bin/git"
 echo "    git --version"
