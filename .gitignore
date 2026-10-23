@@ -1,3 +1,5 @@
 .DS_Store
 # Pi project-local package/resource state is machine-local and is not managed here.
 .pi/
+# Python test bytecode.
+__pycache__/

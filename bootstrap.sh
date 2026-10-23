@@ -72,7 +72,10 @@ mise exec -- python3 -V
 mise exec -- pi --version
 mise exec -- gh --version
 
-# 6) macOS defaults 適用（GUI で手動設定している設定。冪等・自動検証）
+# 6) エージェントスキル導入・更新（実行時の上流ブランチ HEAD を解決し、pi 管理の clone へ適用）
+mise exec -- ./agents/sync-skills.sh
+
+# 7) macOS defaults 適用（GUI で手動設定している設定。冪等・自動検証）
 echo "==> macOS defaults"
 ./macos/defaults.sh
 
