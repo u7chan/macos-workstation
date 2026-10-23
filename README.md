@@ -49,6 +49,8 @@ The [`home/`](home/) directory is the source of truth for dotfiles. chezmoi maps
 | [`home/dot_zprofile`](home/dot_zprofile) | `~/.zprofile` | MacPorts PATH |
 | [`home/dot_zshrc`](home/dot_zshrc) | `~/.zshrc` | mise activation and shell aliases |
 | [`home/dot_config/mise/config.toml`](home/dot_config/mise/config.toml) | `~/.config/mise/config.toml` | Tool declarations and version constraints |
+| [Harness launcher](home/dot_local/bin/executable_agent-harness-exec) | `~/.local/bin/agent-harness-exec` | Process-local environment for upstream GitHub/review harnesses |
+| [Harness invocation rule](home/private_dot_pi/private_agent/modify_private_AGENTS.md) | `~/.pi/agent/AGENTS.md` | Updates only a marked instruction block, preserving other instructions |
 | [Ghostty configuration](home/Library/Application%20Support/com.mitchellh.ghostty/config) | `~/Library/Application Support/com.mitchellh.ghostty/config` | Ghostty font settings |
 
 - bootstrap converges the machine with `chezmoi apply --source=./home --force`
@@ -70,7 +72,37 @@ Bootstrap installs or updates the skill package using the source and branch defi
 
 Run bootstrap between tasks, then `/reload` or restart every running pi session before using the updated skills.
 
-Package installation does not provision skill-specific dependencies or guarantee macOS compatibility; consult the upstream package's prerequisites before using its harness scripts.
+Package installation alone does not provision skill-specific dependencies or guarantee macOS compatibility. Bootstrap provisions the limited GitHub/review dependencies declared in [`macports/ports.txt`](macports/ports.txt); other skill dependencies remain out of scope.
+
+### GitHub and review harnesses
+
+Use the [managed launcher](home/dot_local/bin/executable_agent-harness-exec) for the supported upstream entrypoints listed in its dispatch guard. Resolve each absolute entrypoint path from the installed `SKILL.md` you actually read, not from a development checkout. For example, with `GH_SKILL_DIR` set to that installed skill directory:
+
+```sh
+"$HOME/.local/bin/agent-harness-exec" "$GH_SKILL_DIR/scripts/gh.sh" pr.read request.json
+```
+
+The launcher adds the MacPorts GNU compatibility directory to PATH **only on macOS, only for the harness and its descendants**. It checks dependencies and fails without installing anything or falling back to incompatible commands. On other operating systems it leaves PATH unchanged. It delegates to the upstream harness without changing API authorization rules, arguments, stdin, working directory, or exit status.
+
+Do not source the launcher, add its GNU directory to shell startup files, wrap a whole pi session, or run review-target tests through it. Run tests and ordinary commands separately in their normal environment. The entrypoint guard prevents accidental broad use; it is not a security boundary.
+
+The [managed invocation rule](home/private_dot_pi/private_agent/modify_private_AGENTS.md) routes skill calls through this launcher. chezmoi creates or updates only its marked block in the default pi user instructions, leaving unrelated content and settings intact. The pi directories and instruction file are managed as private to avoid widening access to existing user data. Incomplete or duplicate markers stop application rather than discarding user content. If you use a custom pi agent directory or an overriding context file such as `AGENTS.override.md`, include the managed rule in your active instructions yourself. Run `/reload` or restart pi after applying instruction changes.
+
+#### Verification
+
+Run the focused control-flow and chezmoi integration tests:
+
+```sh
+python3 -m unittest discover -s tests -v
+```
+
+For real-machine checks, record the installed upstream revision, then:
+
+1. Confirm that ordinary `command -v grep`, `command -v sed`, and `command -v stat` results are unchanged after bootstrap and after launcher execution. Review-target tests must retain this ordinary environment.
+2. Through the launcher, retrieve an actual PR with the upstream dispatcher's read-only actions, validate a representative review payload, and exercise the recheck helper. Follow the loaded skills for each input format.
+3. Record successes and failures with the tested revision. Do not post test reviews or comments. Check posting and retrieval only during a separately authorized real review.
+
+Automated tests exercise our own control logic and are not a substitute for these macOS checks. Upstream currently documents Linux-only support; this integration does not establish complete macOS support. The dependency scope is defined in the [MacPorts declarations](macports/ports.txt), not a promise to satisfy every upstream prerequisite.
 
 ## macOS defaults
 
