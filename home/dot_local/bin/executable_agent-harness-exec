@@ -1,0 +1,55 @@
+#!/bin/bash
+
+# Sourcing would leak PATH (and shell options) into the caller.
+if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then
+  printf '%s\n' 'ERROR: execute agent-harness-exec; do not source it.' >&2
+  return 2
+fi
+set -euo pipefail
+
+fail() {
+  printf 'ERROR: %s\n' "$1" >&2
+  exit 1
+}
+
+# Resolve this absolute path from the installed SKILL.md, not a dev checkout.
+# This is an invocation guard, not a security boundary or package resolver.
+case "${1:-}" in
+  /*/gh/scripts/gh.sh|\
+  /*/review/scripts/validate-review-payload.sh|\
+  /*/review/scripts/recheck-state.sh|\
+  /*/review/scripts/recheck-state.py) ;;
+  *)
+    printf '%s\n' \
+      'Usage: agent-harness-exec <absolute installed gh/review entrypoint> [args...]' \
+      'Only gh.sh, validate-review-payload.sh, and recheck-state.sh/.py are supported.' \
+      'Do not use this launcher for pi, shells, or review-target tests.' >&2
+    exit 2
+    ;;
+esac
+[ -f "$1" ] && [ -x "$1" ] || fail "harness is not an executable file: $1"
+
+os="$(uname -s)" || fail 'could not determine the operating system with uname -s'
+[ -n "$os" ] || fail 'uname -s returned an empty operating system'
+if [ "$os" = Darwin ]; then
+  gnu_bin='/opt/local/libexec/gnubin'
+  install_hint='Run macos-workstation/bootstrap.sh to install the declared dependencies.'
+  for tool in grep stat mktemp sort head; do
+    binary="$gnu_bin/$tool"
+    [ -x "$binary" ] || fail "missing GNU $tool at $binary. $install_hint"
+    version="$("$binary" --version 2>/dev/null)" || fail "unusable GNU $tool at $binary. $install_hint"
+    case "$version" in
+      *GNU*) ;;
+      *) fail "expected GNU $tool at $binary. $install_hint" ;;
+    esac
+  done
+  printf 'github.com\n' | "$gnu_bin/grep" -Pq '^github\.com$' \
+    || fail "GNU grep must support -P. $install_hint"
+  command -v jq >/dev/null && jq -en 'true' >/dev/null 2>&1 \
+    || fail "jq must be usable on PATH. $install_hint"
+
+  # This process and the harness's descendants only; never modify shell startup.
+  export PATH="$gnu_bin:$PATH"
+fi
+
+exec "$@"
