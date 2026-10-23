@@ -1,7 +1,7 @@
-"""Exercise the font declaration with real chezmoi and a small offline archive.
+"""小さなオフラインアーカイブと実際のchezmoiで、フォント定義の適用を確認する。
 
-These tests check archive selection, convergence, and checksum enforcement, not
-macOS font discovery or rendering; those require a real-machine check.
+アーカイブ内のファイル選別・繰り返し適用・チェックサム検証を行う。
+macOSでのフォント認識や描画は対象外とし、別途実機で確認する。
 """
 
 import hashlib
