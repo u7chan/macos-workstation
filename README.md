@@ -77,7 +77,7 @@ GUI-only macOS settings scripted to avoid manual reconfiguration on a new Mac.
 - Idempotent: every run re-applies all settings and verifies each one by reading the value back (auto-verification, OK/NG)
 - The configured settings and their values are defined in [`macos/defaults.sh`](macos/defaults.sh). Edit that script rather than maintaining a separate settings list here.
 
-> Note: some settings may require logging out and back in to take effect.
+> Note: some settings may require a reboot to take effect. The script prints a restart notice after a successful run only when the trackpad tracking speed changes; it does not track whether a reboot is still pending.
 
 ## Update
 
