@@ -1,0 +1,56 @@
+name: Tests
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  unittest:
+    name: unittest (Linux)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    defaults:
+      run:
+        shell: bash
+    env:
+      CHEZMOI_VERSION: 2.72.1
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.13'
+      - name: Install test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends git zsh
+          archive="chezmoi_${CHEZMOI_VERSION}_linux_amd64.tar.gz"
+          checksums="chezmoi_${CHEZMOI_VERSION}_checksums.txt"
+          release="https://github.com/twpayne/chezmoi/releases/download/v${CHEZMOI_VERSION}"
+          mkdir -p "$RUNNER_TEMP/chezmoi" "$RUNNER_TEMP/test-bin"
+          cd "$RUNNER_TEMP/chezmoi"
+          curl --fail --silent --show-error --location --retry 3 --remote-name "$release/$archive"
+          curl --fail --silent --show-error --location --retry 3 --remote-name "$release/$checksums"
+          awk -v archive="$archive" '$2 == archive' "$checksums" > checksum.txt
+          test -s checksum.txt
+          sha256sum --check checksum.txt
+          tar -xzf "$archive" -C "$RUNNER_TEMP/test-bin" chezmoi
+          echo "$RUNNER_TEMP/test-bin" >> "$GITHUB_PATH"
+      - name: Verify test dependencies
+        run: |
+          python3 --version
+          git --version
+          chezmoi --version
+          zsh --version
+      - name: Run tests without skips
+        run: |
+          python3 -m unittest discover -s tests -v 2>&1 | tee "$RUNNER_TEMP/unittest.log"
+          if grep -Eq '^OK \(.*skipped=' "$RUNNER_TEMP/unittest.log"; then
+            echo '::error::Tests were skipped; all existing tests must run in CI.'
+            exit 1
+          fi
