@@ -91,7 +91,7 @@ Restart Ghostty after applying font changes. Ghostty itself must be installed se
 
 Bootstrap delegates Pi package and skill installation to the installed [`myupdate` command](home/dot_local/bin/executable_myupdate), which defines the managed package sources and skill branch. There is no separate bootstrap-only skill updater. Each run resolves the upstream skill branch head to a commit and installs that revision through pi; upstream skill changes do not require a change to this repository. The revision is printed and saved in pi's user package settings. Development checkouts are not used or modified, and unrelated pi settings and package resource filters are preserved.
 
-Run updates between tasks, then `/reload` or restart every running pi session before using updated packages and skills. A new Pi version requires a restart.
+Exit all Pi sessions before running `myupdate` or bootstrap, then start Pi again after updates finish. See [Daily Pi updates](#daily-pi-updates) for the normal workflow.
 
 Package installation alone does not provision skill-specific dependencies or guarantee macOS compatibility. Bootstrap provisions the limited GitHub/review dependencies declared in [`macports/ports.txt`](macports/ports.txt); other skill dependencies remain out of scope.
 
@@ -144,17 +144,19 @@ GUI-only macOS settings scripted to avoid manual reconfiguration on a new Mac.
 
 ### Daily Pi updates
 
-After starting the computer, run this manually before beginning work:
+After starting the computer, exit all Pi sessions, including those in other terminal windows or panes. Then run this manually before beginning work:
 
 ```sh
 myupdate
 ```
 
-Bootstrap installs this command through chezmoi, prepares the mise runtimes, then invokes it once. The installed command works from any directory without the repository checkout. It updates only Pi through mise (within the global tool constraint), installs or refreshes the npm packages declared in the [command](home/dot_local/bin/executable_myupdate), and resolves and installs the latest configured skill-branch commit. Existing managed Pi installations are kept so running sessions do not lose their files. Missing packages are installed on the first run; Pi owns package registration and preserves unrelated settings and resource filters.
+Bootstrap installs this command through chezmoi, prepares the mise runtimes, then invokes it once. The installed command works from any directory without the repository checkout. It updates only Pi through mise (within the global tool constraint), installs or refreshes the npm packages declared in the [command](home/dot_local/bin/executable_myupdate), and resolves and installs the latest configured skill-branch commit. Missing packages are installed on the first run; Pi owns package registration and preserves unrelated settings and resource filters.
+
+The `--no-prune` safeguard retains old Pi installations if an update is accidentally run with a session still open. It does not make live package or skill updates safe, and old Pi versions are not scheduled for automatic removal. See [Remove old Pi versions](#remove-old-pi-versions) for optional manual cleanup.
 
 The command uses the global mise configuration, ignores project-local Pi configuration, and never runs `sudo`, schedules itself, or updates other runtimes, MacPorts, or macOS settings. It stops on the first failure without retrying or reporting success; already completed updates are not rolled back. Invalid Pi settings stop the command before any update. An atomic directory lock prevents concurrent `myupdate` runs. If an interrupted run leaves a stale lock, check that no update is running before removing the empty lock directory shown in the error.
 
-Restart Pi after an update, or use `/reload` for package/skill-only changes. Check the printed Pi version, user package list, and skill revision. For a real-machine smoke check, confirm the declared extensions load and exercise a public web search and a search for a known local session. Session query can send selected past conversations to the query model; the current project is not a privacy boundary, and WSL sessions are not synchronized automatically.
+Start Pi again after the update completes. Check the printed Pi version, user package list, and skill revision. For a real-machine smoke check, confirm the declared extensions load and exercise a public web search and a search for a known local session. Session query can send selected past conversations to the query model; the current project is not a privacy boundary, and WSL sessions are not synchronized automatically.
 
 ### Reapply workstation configuration
 
@@ -174,6 +176,24 @@ mise -C "$HOME" up
 OS-level package declarations are maintained separately in [`macports/ports.txt`](macports/ports.txt).
 
 ## Cleanup
+
+### Remove old Pi versions
+
+`myupdate` keeps old Pi installations with `--no-prune`, so upgrades to new versions can accumulate old ones. Repeating an update without a new version does not create another copy. This optional cleanup does not stop managing Pi: keep its declaration in the [global mise configuration](home/dot_config/mise/config.toml) unchanged.
+
+Exit all Pi sessions before cleanup. Preview unused versions for Pi only:
+
+```sh
+mise -C "$HOME" prune --tools --dry-run npm:@earendil-works/pi-coding-agent
+```
+
+Review the candidates and confirm that all Pi sessions are closed before deleting them. Do not treat a dry-run as a check that no running process uses those files.
+
+```sh
+mise -C "$HOME" prune --tools npm:@earendil-works/pi-coding-agent
+```
+
+Versions still referenced by tracked configurations or tool stubs are retained. Cleanup is a separate manual operation; `myupdate` does not run it automatically.
 
 ### Remove tool declarations and unused installations
 
