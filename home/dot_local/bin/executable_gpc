@@ -1,0 +1,89 @@
+#!/usr/bin/env bash
+# ベースブランチを最新化し、作業ブランチではマージ済みPRを確認して後片付けする。
+set -euo pipefail
+
+usage() {
+  printf '%s\n' \
+    'Usage: gpc' \
+    '' \
+    'Fast-forward a base branch from origin, or clean up the current merged GitHub PR branch.' \
+    'Run from the primary worktree with no uncommitted or untracked files.'
+}
+
+die() {
+  printf 'gpc: %s\n' "$*" >&2
+  exit 1
+}
+
+is_base_branch() {
+  case "$1" in
+    main | master | develop) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+if [[ ${1:-} == "-h" || ${1:-} == "--help" ]]; then
+  usage
+  exit 0
+fi
+(( $# == 0 )) || {
+  usage >&2
+  exit 2
+}
+
+[[ $(git rev-parse --is-inside-work-tree 2>/dev/null) == true ]] \
+  || die "not in a Git worktree"
+git_dir=$(git rev-parse --path-format=absolute --git-dir)
+common_dir=$(git rev-parse --path-format=absolute --git-common-dir)
+[[ $git_dir == "$common_dir" ]] || die "run this command from the primary worktree"
+
+status=$(git status --porcelain --untracked-files=all --ignore-submodules=none)
+[[ -z $status ]] || die "worktree is dirty (including untracked files)"
+head_branch=$(git branch --show-current)
+[[ -n $head_branch ]] || die "detached HEAD is not supported"
+
+if is_base_branch "$head_branch"; then
+  git pull --ff-only origin "$head_branch"
+  printf 'Updated %s to %s.\n' "$head_branch" "$(git rev-parse --short HEAD)"
+  exit 0
+fi
+
+origin_url=$(git config --get remote.origin.url) || die "origin is not configured"
+case "$origin_url" in
+  https://github.com/*) repository=${origin_url#https://github.com/} ;;
+  git@github.com:*) repository=${origin_url#git@github.com:} ;;
+  ssh://git@github.com/*) repository=${origin_url#ssh://git@github.com/} ;;
+  *) die "origin must point to a github.com repository" ;;
+esac
+repository=${repository%.git}
+[[ $repository =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] \
+  || die "origin must point to a github.com repository"
+
+command -v gh >/dev/null 2>&1 || die "gh is not installed"
+gh auth status --hostname github.com >/dev/null 2>&1 \
+  || die "gh is not authenticated for github.com"
+pr_fields=$(gh pr view "$head_branch" --repo "https://github.com/$repository" \
+  --json state,mergedAt,baseRefName,headRefName,headRefOid,mergeCommit \
+  --jq '[.state, .mergedAt, .baseRefName, .headRefName, .headRefOid, .mergeCommit.oid] | @tsv') \
+  || die "no GitHub PR found for branch: $head_branch"
+IFS=$'\t' read -r pr_state merged_at base_branch pr_head head_ref_oid merge_oid <<<"$pr_fields"
+
+[[ $pr_state == "MERGED" && -n $merged_at ]] || die "PR is not merged"
+[[ $pr_head == "$head_branch" ]] || die "PR head does not match current branch"
+[[ -n $head_ref_oid && -n $merge_oid ]] || die "PR commit OIDs are not available"
+is_base_branch "$base_branch" || die "unsupported PR base branch: $base_branch"
+
+local_head_oid=$(git rev-parse --verify "refs/heads/$head_branch")
+[[ $local_head_oid == "$head_ref_oid" ]] \
+  || die "local head has diverged from PR head; keeping local commits"
+
+git switch "$base_branch"
+git pull --ff-only origin "$base_branch"
+git merge-base --is-ancestor "$merge_oid" HEAD \
+  || die "PR merge commit is not in the updated base branch; keeping $head_branch"
+[[ $(git rev-parse --verify "refs/heads/$head_branch") == "$head_ref_oid" ]] \
+  || die "local branch changed during cleanup; keeping $head_branch"
+git branch -D "$head_branch"
+
+printf 'Cleaned merged PR branch %s; now on %s at %s.\n' \
+  "$head_branch" "$base_branch" "$(git rev-parse --short HEAD)"
