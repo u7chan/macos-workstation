@@ -95,7 +95,7 @@ Run `./bootstrap.sh` to install and apply the declarations, then open a new Ghos
 
 Launch with `y` to return to the directory selected in Yazi when pressing `q`. Press `Q` to leave the shell directory unchanged, or launch with `yazi` when directory synchronization is not needed. The wrapper and directory-history initialization are managed in the [zsh configuration](home/dot_zshrc). Failed launches leave the shell directory unchanged and remove the temporary directory-transfer file.
 
-Current Ghostty and Yazi releases support image previews without additional terminal configuration. The existing managed fonts provide the file icons. For a real-machine check, open a fresh login shell, run `yazi --debug` to inspect terminal and dependency detection, and check image, SVG, and archive previews. Also verify filename/content search, directory-history navigation, and both exit behaviors. If using tmux, follow the upstream [image-preview instructions](https://yazi-rs.github.io/docs/image-preview/#tmux-users); tmux configuration is not managed here.
+Current Ghostty and Yazi releases support image previews without additional terminal configuration. The existing managed fonts provide the file icons. For a real-machine check, open a fresh login shell, run `ya env` to inspect terminal and dependency detection, and check image, SVG, and archive previews. Also verify filename/content search, directory-history navigation, and both exit behaviors. If using tmux, follow the upstream [image-preview instructions](https://yazi-rs.github.io/docs/image-preview/#tmux-users); tmux configuration is not managed here.
 
 ## Agent skills
 
