@@ -46,9 +46,10 @@ The [`home/`](home/) directory is the source of truth for dotfiles. chezmoi maps
 | Definition | Destination | Purpose |
 | --- | --- | --- |
 | [`home/dot_gitconfig`](home/dot_gitconfig) | `~/.gitconfig` | Git commit identity, aliases, and explicit-identity enforcement |
-| [`home/dot_zprofile`](home/dot_zprofile) | `~/.zprofile` | MacPorts PATH |
+| [`home/dot_zprofile`](home/dot_zprofile) | `~/.zprofile` | MacPorts and user command PATH |
 | [`home/dot_zshrc`](home/dot_zshrc) | `~/.zshrc` | mise activation, shell aliases, and prompt initialization |
 | [`home/dot_config/mise/config.toml`](home/dot_config/mise/config.toml) | `~/.config/mise/config.toml` | Tool declarations and version constraints |
+| [`gpc`](home/dot_local/bin/executable_gpc) | `~/.local/bin/gpc` | Update a base branch or clean up the current merged PR branch |
 | [Harness launcher](home/dot_local/bin/executable_agent-harness-exec) | `~/.local/bin/agent-harness-exec` | Process-local environment for upstream GitHub/review harnesses |
 | [Harness invocation rule](home/private_dot_pi/private_agent/modify_private_AGENTS.md) | `~/.pi/agent/AGENTS.md` | Updates only a marked instruction block, preserving other instructions |
 | [Font archive declaration](home/.chezmoiexternal.toml) | User font directory declared in the file | Pinned font download, checksum, and included files |
@@ -60,6 +61,16 @@ The [`home/`](home/) directory is the source of truth for dotfiles. chezmoi maps
 ### Git
 
 Git commit identity, aliases, and explicit-identity enforcement are defined in the [Git configuration](home/dot_gitconfig). The managed identity uses a public GitHub username and GitHub-provided noreply address, not a private email address or credential. Bootstrap applies this file through chezmoi; repository-local Git settings can override the managed defaults when needed.
+
+#### Update and clean up with `gpc`
+
+The managed [`gpc` command](home/dot_local/bin/executable_gpc) is installed by the existing chezmoi step in `./bootstrap.sh`. Open a new login terminal after applying the [PATH configuration](home/dot_zprofile), then run `gpc` from a repository's primary worktree.
+
+On a supported base branch, `gpc` only pulls from `origin` with `--ff-only`; it does not query GitHub or delete branches. On a work branch, it verifies that the matching PR in the GitHub repository configured as `origin` is merged and that the local tip matches the PR head. It then switches to the PR base, pulls with `--ff-only`, and deletes only the original work branch after confirming that the PR merge commit is present. This also supports squash merges. Supported base branches are defined in the script.
+
+Uncommitted changes, untracked files, detached HEADs, and linked worktrees stop the command. Pull failures or diverged history stop cleanup without deleting the work branch; if switching has already succeeded, you remain on the base branch. The command never stashes, resets, or sweeps other branches.
+
+Run `gpc --help` for a usage summary. Automated tests use temporary Git repositories and a simulated GitHub CLI; verify the installed command's PATH and actual GitHub PR lookup separately on a real machine.
 
 ### Shell prompt
 
