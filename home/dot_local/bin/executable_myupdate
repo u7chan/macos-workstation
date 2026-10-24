@@ -1,0 +1,96 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# 更新対象の正本。Pi本体のバージョン制約はmiseのグローバル設定に従う。
+PI_TOOL="npm:@earendil-works/pi-coding-agent"
+PI_PACKAGES=(
+  "npm:pi-web-access"
+  "npm:@ogulcancelik/pi-session-recall"
+)
+SKILLS_REPOSITORY="github.com/u7chan/agent-harness"
+SKILLS_BRANCH="main"
+
+usage() {
+  printf '%s\n' \
+    'Usage: myupdate' \
+    '' \
+    'Update the mise-managed Pi, managed Pi packages, and agent skills.' \
+    'Run manually before starting work; no sudo or project-local updates.'
+}
+
+die() {
+  printf 'myupdate: %s\n' "$*" >&2
+  exit 1
+}
+
+if [[ ${1:-} == "-h" || ${1:-} == "--help" ]]; then
+  usage
+  exit 0
+fi
+(( $# == 0 )) || {
+  usage >&2
+  exit 2
+}
+
+# 呼び出し元のプロジェクト設定やmiseのバージョン指定を更新に持ち込まない。
+cd "$HOME"
+export MISE_CONFIG_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/mise/config.toml"
+[[ -f $MISE_CONFIG_FILE ]] || die "run bootstrap first: missing $MISE_CONFIG_FILE"
+for dependency in mise git jq; do
+  command -v "$dependency" >/dev/null 2>&1 || die "$dependency is required"
+done
+mise_bin="$(command -v mise)"
+
+umask 077
+state_dir="${XDG_STATE_HOME:-$HOME/.local/state}/macos-workstation"
+mkdir -p "$state_dir"
+lock_dir="$state_dir/myupdate.lock"
+mkdir "$lock_dir" 2>/dev/null || die "update lock exists: $lock_dir; check for another myupdate process before removing a stale lock"
+trap 'rmdir "$lock_dir"' EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+# Piは壊れた設定を警告して既定値へ戻す場合があるため、書き込み前に停止する。
+settings="${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}/settings.json"
+if [[ -e $settings || -L $settings ]]; then
+  [[ -f $settings ]] || die "Pi settings path is not a regular file: $settings"
+  jq -e -s '
+    length == 1 and (.[0] |
+      type == "object"
+      and (if has("packages") then
+        .packages | type == "array" and all(.[];
+          (type == "string" and length > 0)
+          or (type == "object" and (.source | type == "string" and length > 0))
+        )
+      else true end)
+    )
+  ' "$settings" >/dev/null || die "invalid Pi settings; keeping existing data: $settings"
+fi
+
+# 実行中のPiが参照している旧インストールは削除しない。
+printf '==> updating Pi through mise\n'
+"$mise_bin" upgrade --no-prune "$PI_TOOL"
+
+run_pi() {
+  # upgrade後に再解決し、シェルのPATHに残った古いPiを使用しない。
+  "$mise_bin" exec -- pi "$@"
+}
+
+# installは既存登録・フィルターを保持して更新でき、初回導入にも使える。
+for source in "${PI_PACKAGES[@]}"; do
+  printf '==> ensuring Pi package %s\n' "$source"
+  run_pi install "$source" --no-approve
+done
+
+printf '==> resolving agent skills: %s (%s)\n' "$SKILLS_REPOSITORY" "$SKILLS_BRANCH"
+revision="$(git ls-remote --exit-code "https://${SKILLS_REPOSITORY}.git" "refs/heads/${SKILLS_BRANCH}" | cut -f1)"
+[[ $revision =~ ^[0-9a-f]{40}$ ]] || die "could not resolve a single commit for agent skills"
+printf '==> installing agent skills at %s\n' "$revision"
+run_pi install "git:${SKILLS_REPOSITORY}@${revision}" --no-approve
+
+printf '==> Pi version and user packages\n'
+run_pi --version
+run_pi list --no-approve
+printf '%s\n' \
+  'myupdate: all updates completed successfully' \
+  'Start Pi to begin work. Exit all Pi sessions before the next update.'
