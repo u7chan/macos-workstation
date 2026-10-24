@@ -93,4 +93,4 @@ run_pi --version
 run_pi list --no-approve
 printf '%s\n' \
   'myupdate: all updates completed successfully' \
-  'Restart Pi before starting work, or /reload running sessions to load updated packages and skills (restart to use a new Pi version).'
+  'Start Pi to begin work. Exit all Pi sessions before the next update.'
