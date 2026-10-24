@@ -4,9 +4,6 @@ jq
 coreutils
 grep
 
-# Yazi search, archive, and media preview helpers
+# Yazi search and archive helpers
 fd
 7zip
-ffmpeg
-poppler
-ImageMagick7

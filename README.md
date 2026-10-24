@@ -46,7 +46,7 @@ The [`home/`](home/) directory is the source of truth for dotfiles. chezmoi maps
 | Definition | Destination | Purpose |
 | --- | --- | --- |
 | [`home/dot_gitconfig`](home/dot_gitconfig) | `~/.gitconfig` | Git commit identity, aliases, and explicit-identity enforcement |
-| [`home/dot_zprofile`](home/dot_zprofile) | `~/.zprofile` | MacPorts, media helper, and user command PATH |
+| [`home/dot_zprofile`](home/dot_zprofile) | `~/.zprofile` | MacPorts and user command PATH |
 | [`home/dot_zshrc`](home/dot_zshrc) | `~/.zshrc` | mise activation, shell aliases, Yazi integration, and prompt initialization |
 | [`home/dot_config/mise/config.toml`](home/dot_config/mise/config.toml) | `~/.config/mise/config.toml` | Tool declarations and version constraints |
 | [`gpc`](home/dot_local/bin/executable_gpc) | `~/.local/bin/gpc` | Update a base branch or clean up the current merged PR branch |
@@ -89,13 +89,13 @@ Restart Ghostty after applying font changes. Ghostty itself must be installed se
 
 ### Yazi
 
-[Yazi](https://yazi-rs.github.io/) is the managed terminal file manager. Its tool declaration and portable search, navigation, and preview helpers are defined in the [mise configuration](home/dot_config/mise/config.toml); OS-level helpers are defined in the [MacPorts declarations](macports/ports.txt). The [login shell PATH](home/dot_zprofile) exposes the media helper binaries installed outside the standard MacPorts bin directory. No custom Yazi configuration or plugins are installed; upstream defaults are used.
+[Yazi](https://yazi-rs.github.io/) is the managed terminal file manager. Its tool declaration and portable search, navigation, and preview helpers are defined in the [mise configuration](home/dot_config/mise/config.toml); OS-level helpers are defined in the [MacPorts declarations](macports/ports.txt). No custom Yazi configuration or plugins are installed; upstream defaults are used. Heavyweight document, video, and image-conversion preview helpers are left for separate configuration.
 
 Run `./bootstrap.sh` to install and apply the declarations, then open a new Ghostty window. As with other bootstrap runs, exit all Pi sessions first because bootstrap also runs the daily Pi updater.
 
 Launch with `y` to return to the directory selected in Yazi when pressing `q`. Press `Q` to leave the shell directory unchanged, or launch with `yazi` when directory synchronization is not needed. The wrapper and directory-history initialization are managed in the [zsh configuration](home/dot_zshrc). Failed launches leave the shell directory unchanged and remove the temporary directory-transfer file.
 
-Current Ghostty and Yazi releases support image previews without additional terminal configuration. The existing managed fonts provide the file icons. For a real-machine check, open a fresh login shell, run `yazi --debug` to inspect terminal and dependency detection, and check image, PDF, video, and archive previews. Also verify filename/content search, directory-history navigation, and both exit behaviors. If using tmux, follow the upstream [image-preview instructions](https://yazi-rs.github.io/docs/image-preview/#tmux-users); tmux configuration is not managed here.
+Current Ghostty and Yazi releases support image previews without additional terminal configuration. The existing managed fonts provide the file icons. For a real-machine check, open a fresh login shell, run `yazi --debug` to inspect terminal and dependency detection, and check image, SVG, and archive previews. Also verify filename/content search, directory-history navigation, and both exit behaviors. If using tmux, follow the upstream [image-preview instructions](https://yazi-rs.github.io/docs/image-preview/#tmux-users); tmux configuration is not managed here.
 
 ## Agent skills
 
