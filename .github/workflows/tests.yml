@@ -30,7 +30,7 @@ jobs:
       - name: Install test dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install --yes --no-install-recommends git zsh
+          sudo apt-get install --yes --no-install-recommends git jq zsh
           archive="chezmoi_${CHEZMOI_VERSION}_linux_amd64.tar.gz"
           checksums="chezmoi_${CHEZMOI_VERSION}_checksums.txt"
           release="https://github.com/twpayne/chezmoi/releases/download/v${CHEZMOI_VERSION}"
@@ -47,6 +47,7 @@ jobs:
         run: |
           python3 --version
           git --version
+          jq --version
           chezmoi --version
           zsh --version
       - name: Run tests without skips

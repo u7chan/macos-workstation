@@ -35,7 +35,7 @@ cd macos-workstation
 git clone https://github.com/u7chan/macos-workstation.git
 cd macos-workstation
 
-# bootstrap: installs Xcode CLT (if missing) + MacPorts + dotfiles and fonts (chezmoi) + mise + runtimes + agent skills
+# bootstrap: installs Xcode CLT (if missing) + MacPorts + dotfiles and fonts (chezmoi) + mise + runtimes, then runs myupdate
 ./bootstrap.sh
 ```
 
@@ -50,6 +50,7 @@ The [`home/`](home/) directory is the source of truth for dotfiles. chezmoi maps
 | [`home/dot_zshrc`](home/dot_zshrc) | `~/.zshrc` | mise activation, shell aliases, and prompt initialization |
 | [`home/dot_config/mise/config.toml`](home/dot_config/mise/config.toml) | `~/.config/mise/config.toml` | Tool declarations and version constraints |
 | [`gpc`](home/dot_local/bin/executable_gpc) | `~/.local/bin/gpc` | Update a base branch or clean up the current merged PR branch |
+| [`myupdate`](home/dot_local/bin/executable_myupdate) | `~/.local/bin/myupdate` | Daily user-level Pi, managed package, and skill updates |
 | [Harness launcher](home/dot_local/bin/executable_agent-harness-exec) | `~/.local/bin/agent-harness-exec` | Process-local environment for upstream GitHub/review harnesses |
 | [Harness invocation rule](home/private_dot_pi/private_agent/modify_private_AGENTS.md) | `~/.pi/agent/AGENTS.md` | Updates only a marked instruction block, preserving other instructions |
 | [Font archive declaration](home/.chezmoiexternal.toml) | User font directory declared in the file | Pinned font download, checksum, and included files |
@@ -88,9 +89,9 @@ Restart Ghostty after applying font changes. Ghostty itself must be installed se
 
 ## Agent skills
 
-Bootstrap installs or updates the skill package using the source and branch defined in [`agents/sync-skills.sh`](agents/sync-skills.sh). Each run resolves the upstream branch head to a commit and installs that revision through pi; upstream skill changes do not require a change to this repository. The revision is printed and saved in pi's user package settings. Development checkouts are not used or modified, and other pi settings are preserved.
+Bootstrap delegates Pi package and skill installation to the installed [`myupdate` command](home/dot_local/bin/executable_myupdate), which defines the managed package sources and skill branch. There is no separate bootstrap-only skill updater. Each run resolves the upstream skill branch head to a commit and installs that revision through pi; upstream skill changes do not require a change to this repository. The revision is printed and saved in pi's user package settings. Development checkouts are not used or modified, and unrelated pi settings and package resource filters are preserved.
 
-Run bootstrap between tasks, then `/reload` or restart every running pi session before using the updated skills.
+Run updates between tasks, then `/reload` or restart every running pi session before using updated packages and skills. A new Pi version requires a restart.
 
 Package installation alone does not provision skill-specific dependencies or guarantee macOS compatibility. Bootstrap provisions the limited GitHub/review dependencies declared in [`macports/ports.txt`](macports/ports.txt); other skill dependencies remain out of scope.
 
@@ -141,8 +142,24 @@ GUI-only macOS settings scripted to avoid manual reconfiguration on a new Mac.
 
 ## Update
 
+### Daily Pi updates
+
+After starting the computer, run this manually before beginning work:
+
 ```sh
-git pull
+myupdate
+```
+
+Bootstrap installs this command through chezmoi, prepares the mise runtimes, then invokes it once. The installed command works from any directory without the repository checkout. It updates only Pi through mise (within the global tool constraint), installs or refreshes the npm packages declared in the [command](home/dot_local/bin/executable_myupdate), and resolves and installs the latest configured skill-branch commit. Existing managed Pi installations are kept so running sessions do not lose their files. Missing packages are installed on the first run; Pi owns package registration and preserves unrelated settings and resource filters.
+
+The command uses the global mise configuration, ignores project-local Pi configuration, and never runs `sudo`, schedules itself, or updates other runtimes, MacPorts, or macOS settings. It stops on the first failure without retrying or reporting success; already completed updates are not rolled back. Invalid Pi settings stop the command before any update. An atomic directory lock prevents concurrent `myupdate` runs. If an interrupted run leaves a stale lock, check that no update is running before removing the empty lock directory shown in the error.
+
+Restart Pi after an update, or use `/reload` for package/skill-only changes. Check the printed Pi version, user package list, and skill revision. For a real-machine smoke check, confirm the declared extensions load and exercise a public web search and a search for a known local session. Session query can send selected past conversations to the query model; the current project is not a privacy boundary, and WSL sessions are not synchronized automatically.
+
+### Reapply workstation configuration
+
+```sh
+git pull --ff-only
 ./bootstrap.sh
 ```
 

@@ -69,12 +69,11 @@ mise install
 echo "==> installed versions"
 mise exec -- node -v
 mise exec -- python3 -V
-mise exec -- pi --version
 mise exec -- gh --version
 mise exec -- starship --version
 
-# 6) エージェントスキル導入・更新（実行時の上流ブランチ HEAD を解決し、pi 管理の clone へ適用）
-mise exec -- ./agents/sync-skills.sh
+# 6) Pi本体・Pi Packages・スキルの導入と更新は、配置済みの日次コマンドへ委譲する。
+"$HOME/.local/bin/myupdate"
 
 # 7) macOS defaults 適用（GUI で手動設定している設定。冪等・自動検証）
 echo "==> macOS defaults"
