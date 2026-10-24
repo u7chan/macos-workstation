@@ -47,7 +47,7 @@ The [`home/`](home/) directory is the source of truth for dotfiles. chezmoi maps
 | --- | --- | --- |
 | [`home/dot_gitconfig`](home/dot_gitconfig) | `~/.gitconfig` | Git commit identity, aliases, and explicit-identity enforcement |
 | [`home/dot_zprofile`](home/dot_zprofile) | `~/.zprofile` | MacPorts PATH |
-| [`home/dot_zshrc`](home/dot_zshrc) | `~/.zshrc` | mise activation and shell aliases |
+| [`home/dot_zshrc`](home/dot_zshrc) | `~/.zshrc` | mise activation, shell aliases, and prompt initialization |
 | [`home/dot_config/mise/config.toml`](home/dot_config/mise/config.toml) | `~/.config/mise/config.toml` | Tool declarations and version constraints |
 | [Harness launcher](home/dot_local/bin/executable_agent-harness-exec) | `~/.local/bin/agent-harness-exec` | Process-local environment for upstream GitHub/review harnesses |
 | [Harness invocation rule](home/private_dot_pi/private_agent/modify_private_AGENTS.md) | `~/.pi/agent/AGENTS.md` | Updates only a marked instruction block, preserving other instructions |
@@ -60,6 +60,12 @@ The [`home/`](home/) directory is the source of truth for dotfiles. chezmoi maps
 ### Git
 
 Git commit identity, aliases, and explicit-identity enforcement are defined in the [Git configuration](home/dot_gitconfig). The managed identity uses a public GitHub username and GitHub-provided noreply address, not a private email address or credential. Bootstrap applies this file through chezmoi; repository-local Git settings can override the managed defaults when needed.
+
+### Shell prompt
+
+[Starship](https://starship.rs/) is managed through the [mise configuration](home/dot_config/mise/config.toml) and initialized after mise activation in the [zsh configuration](home/dot_zshrc). It uses the default prompt without a custom Starship configuration.
+
+Run `./bootstrap.sh`, then open a new terminal window to load the prompt. Verify the installation with `starship --version`. The managed [Ghostty font settings](home/Library/Application%20Support/com.mitchellh.ghostty/config) use a Nerd Font for prompt symbols; other terminals need a compatible font selected separately.
 
 ### Ghostty
 

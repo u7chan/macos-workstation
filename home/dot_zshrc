@@ -1,3 +1,5 @@
 eval "$(~/.local/bin/mise activate zsh)"
 
 alias g=git
+
+eval "$(starship init zsh)"
