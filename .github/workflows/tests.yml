@@ -19,6 +19,8 @@ jobs:
     env:
       CHEZMOI_VERSION: 2.72.1
     steps:
+      # サプライチェーン対策として、外部 Action は変更可能なタグではなくコミット SHA に固定する。
+      # タグの参照先変更で実行コードが意図せず変わるのを防ぐ。更新時は内容を確認し、SHA と版コメントを更新する。
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
         with:
           persist-credentials: false
