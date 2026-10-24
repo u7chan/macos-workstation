@@ -5,3 +5,10 @@ uv = "latest"
 "npm:@earendil-works/pi-coding-agent" = "latest"
 "aqua:cli/cli" = "latest"
 "aqua:starship/starship" = "latest"
+
+# Yazi and its search, navigation, and SVG preview helpers.
+"aqua:sxyazi/yazi" = "latest"
+"aqua:BurntSushi/ripgrep" = "latest"
+"aqua:junegunn/fzf" = "latest"
+"aqua:ajeetdsouza/zoxide" = "latest"
+"aqua:linebender/resvg" = "latest"

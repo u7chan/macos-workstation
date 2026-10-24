@@ -3,3 +3,7 @@ chezmoi
 jq
 coreutils
 grep
+
+# Yazi search and archive helpers
+fd
+7zip
