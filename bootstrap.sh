@@ -71,6 +71,7 @@ mise exec -- node -v
 mise exec -- python3 -V
 mise exec -- pi --version
 mise exec -- gh --version
+mise exec -- starship --version
 
 # 6) エージェントスキル導入・更新（実行時の上流ブランチ HEAD を解決し、pi 管理の clone へ適用）
 mise exec -- ./agents/sync-skills.sh
