@@ -2,4 +2,22 @@ eval "$(~/.local/bin/mise activate zsh)"
 
 alias g=git
 
+eval "$(zoxide init zsh)"
+
+# Follow Yazi's working directory on normal exit; Q leaves it unchanged.
+function y() {
+  local tmp cwd exit_code=0
+  tmp="$(mktemp "${TMPDIR:-/tmp}/yazi-cwd.XXXXXX")" || return
+  if command yazi "$@" --cwd-file="$tmp"; then
+    IFS= read -r -d '' cwd < "$tmp" || true
+    if [[ -n "$cwd" && "$cwd" != "$PWD" && -d "$cwd" ]]; then
+      builtin cd -- "$cwd" || exit_code=$?
+    fi
+  else
+    exit_code=$?
+  fi
+  command rm -f -- "$tmp" || return
+  return "$exit_code"
+}
+
 eval "$(starship init zsh)"
