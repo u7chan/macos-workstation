@@ -6,6 +6,7 @@ PI_TOOL="npm:@earendil-works/pi-coding-agent"
 PI_PACKAGES=(
   "npm:pi-web-access"
   "npm:@ogulcancelik/pi-session-recall"
+  "git:github.com/u7chan/mypi@main"
 )
 SKILLS_REPOSITORY="github.com/u7chan/agent-harness"
 SKILLS_BRANCH="main"
