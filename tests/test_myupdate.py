@@ -19,7 +19,8 @@ SCRIPT = ROOT / "home/dot_local/bin/executable_myupdate"
 GIT = shutil.which("git")
 JQ = shutil.which("jq")
 CHEZMOI = shutil.which("chezmoi")
-PACKAGES = ("npm:pi-web-access", "npm:@ogulcancelik/pi-session-recall")
+MYPI = "git:github.com/u7chan/mypi@main"
+PACKAGES = ("npm:pi-web-access", "npm:@ogulcancelik/pi-session-recall", MYPI)
 SKILLS = "git:github.com/u7chan/agent-harness"
 PI_TOOL = "npm:@earendil-works/pi-coding-agent"
 
@@ -189,7 +190,9 @@ class MyupdateTests(MyupdateFixture):
         existing = {
             "theme": "custom", "unmanaged": {"keep": True},
             "packages": ["npm:unrelated", {"source": PACKAGES[0], "extensions": ["selected.ts"]},
-                         {"source": f"{SKILLS}@{'1' * 40}", "skills": ["gh"]}],
+                         {"source": f"{SKILLS}@{'1' * 40}", "skills": ["gh"]},
+                         {"source": f"{MYPI.rsplit('@', 1)[0]}@{'2' * 40}",
+                          "extensions": ["extensions/index.ts"], "skills": []}],
         }
         self.settings.parent.mkdir(parents=True)
         self.settings.write_text(json.dumps(existing))
@@ -201,7 +204,11 @@ class MyupdateTests(MyupdateFixture):
         self.assertEqual(first["theme"], "custom")
         self.assertEqual(first["packages"][0:2], existing["packages"][0:2])
         self.assertEqual(first["packages"][2], {"source": f"{SKILLS}@{self.revision}", "skills": ["gh"]})
-        self.assertEqual(first["packages"][3:], [PACKAGES[1]])
+        self.assertEqual(first["packages"][3], {
+            "source": MYPI, "extensions": ["extensions/index.ts"], "skills": [],
+        })
+        self.assertEqual(first["packages"][4:], [PACKAGES[1]])
+        self.assertEqual(self.installs(), [*PACKAGES, f"{SKILLS}@{self.revision}"] * 2)
 
     def test_resolves_latest_skill_commit_on_every_run(self):
         self.assert_success(self.run_update())

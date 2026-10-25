@@ -160,7 +160,7 @@ After starting the computer, exit all Pi sessions, including those in other term
 myupdate
 ```
 
-Bootstrap installs this command through chezmoi, prepares the mise runtimes, then invokes it once. The installed command works from any directory without the repository checkout. It updates only Pi through mise (within the global tool constraint), installs or refreshes the npm packages declared in the [command](home/dot_local/bin/executable_myupdate), and resolves and installs the latest configured skill-branch commit. Missing packages are installed on the first run; Pi owns package registration and preserves unrelated settings and resource filters.
+Bootstrap installs this command through chezmoi, prepares the mise runtimes, then invokes it once. The installed command works from any directory without the repository checkout. It updates only Pi through mise (within the global tool constraint), installs or refreshes the packages declared in the [command](home/dot_local/bin/executable_myupdate), and resolves and installs the latest configured skill-branch commit. Git packages that track a branch are refreshed to its latest commit on each run. Missing packages are installed on the first run; Pi owns package registration and preserves unrelated settings and resource filters. Existing extension installations are not removed or migrated; check package documentation for conflicts before loading overlapping extensions.
 
 The `--no-prune` safeguard retains old Pi installations if an update is accidentally run with a session still open. It does not make live package or skill updates safe, and old Pi versions are not scheduled for automatic removal. See [Remove old Pi versions](#remove-old-pi-versions) for optional manual cleanup.
 
