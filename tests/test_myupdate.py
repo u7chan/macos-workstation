@@ -1,6 +1,6 @@
 """一時HOMEで日次更新の範囲、停止条件、既存設定の保持、bootstrapからの委譲を確認する。
 
-miseとPiの外部インストールは模擬し、Gitの参照解決とchezmoiによる配置には実物を使う。
+mise・Pi・Herdrの外部インストールは模擬し、Gitの参照解決とchezmoiによる配置には実物を使う。
 実ユーザーのツール・設定は変更せず、macOSでの実更新とExtensionのロードは別途確認する。
 """
 
@@ -11,6 +11,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import tomllib
 import unittest
 
 
@@ -23,6 +24,7 @@ MYPI = "git:github.com/u7chan/mypi@main"
 PACKAGES = ("npm:pi-web-access", "npm:@ogulcancelik/pi-session-recall", MYPI)
 SKILLS = "git:github.com/u7chan/agent-harness"
 PI_TOOL = "npm:@earendil-works/pi-coding-agent"
+HERDR_TOOL = "aqua:herdrdev/herdr"
 
 
 @unittest.skipUnless(GIT and JQ, "git and jq are required for update tests")
@@ -78,20 +80,33 @@ os.execv(os.environ["REAL_GIT"], [os.environ["REAL_GIT"], *sys.argv[1:]])
         self.write_command("mise", '''
 args = sys.argv[1:]
 record("mise", args)
-if args == ["upgrade", "--no-prune", "npm:@earendil-works/pi-coding-agent"]:
-    sys.exit(int(os.environ.get("TEST_UPGRADE_STATUS", "0")))
+if args[:2] == ["upgrade", "--no-prune"]:
+    if args[2:] == ["npm:@earendil-works/pi-coding-agent"]:
+        sys.exit(int(os.environ.get("TEST_UPGRADE_STATUS", "0")))
+    if args[2:] == ["aqua:herdrdev/herdr"]:
+        sys.exit(int(os.environ.get("TEST_HERDR_UPGRADE_STATUS", "0")))
+    sys.exit(99)
 if args == ["install"]:
     sys.exit(0)
 if args[:2] == ["exec", "--"]:
-    if args[2] == "pi":
-        target = os.path.join(os.environ["HOME"], "fresh pi")
+    if args[2] in ("pi", "herdr"):
+        target = os.path.join(os.environ["HOME"], "fresh " + args[2])
         os.execv(target, [target, *args[3:]])
     sys.exit(0)
 sys.exit(99)
 ''')
-        self.write_command("pi", '''
-record("stale-pi", sys.argv[1:])
+        for name in ("pi", "herdr"):
+            self.write_command(name, f'''
+record("stale-{name}", sys.argv[1:])
 sys.exit(99)
+''')
+        self.write_python(self.home / "fresh herdr", '''
+args = sys.argv[1:]
+record("herdr", args)
+if args != ["--version"]:
+    sys.exit(99)
+print("herdr fixture")
+sys.exit(int(os.environ.get("TEST_HERDR_VERSION_STATUS", "0")))
 ''')
         self.write_python(self.home / "fresh pi", '''
 from pathlib import Path
@@ -173,14 +188,24 @@ settings.write_text(json.dumps(data) + "\\n")
         self.assertNotIn("/reload", result.stdout)
         self.assertFalse(self.lock.exists())
         self.assertEqual(self.calls("stale-pi"), [])
+        self.assertEqual(self.calls("stale-herdr"), [])
+        self.assertIn("herdr fixture", result.stdout)
         self.assertEqual(self.project_settings.read_text(), '{"packages":["npm:project-only"]}\n')
 
 class MyupdateTests(MyupdateFixture):
-    def test_installs_only_managed_packages_after_upgrading_pi(self):
+    def test_installs_only_managed_packages_after_upgrading_pi_and_herdr(self):
         result = self.run_update()
         self.assert_success(result)
         self.assertEqual(self.installs(), [*PACKAGES, f"{SKILLS}@{self.revision}"])
-        self.assertEqual(self.calls()[0]["args"], ["upgrade", "--no-prune", PI_TOOL])
+        self.assertEqual([call["args"] for call in self.calls()[:2]], [
+            ["upgrade", "--no-prune", PI_TOOL],
+            ["upgrade", "--no-prune", HERDR_TOOL],
+        ])
+        self.assertEqual([call["args"] for call in self.calls("mise") if call["args"][0] == "upgrade"], [
+            ["upgrade", "--no-prune", PI_TOOL],
+            ["upgrade", "--no-prune", HERDR_TOOL],
+        ])
+        self.assertEqual([call["args"] for call in self.calls("herdr")], [["--version"]])
         for call in self.calls():
             self.assertEqual(Path(call["cwd"]), self.home.resolve())
             self.assertEqual(call["config"], str(self.config))
@@ -224,10 +249,41 @@ class MyupdateTests(MyupdateFixture):
         self.env["TEST_UPGRADE_STATUS"] = "9"
         result = self.run_update()
         self.assertEqual(result.returncode, 9)
-        self.assertEqual(self.calls("pi"), [])
-        self.assertEqual(self.calls("git"), [])
+        self.assertEqual([call["args"] for call in self.calls()], [
+            ["upgrade", "--no-prune", PI_TOOL],
+        ])
         self.assertFalse(self.lock.exists())
         self.assertNotIn("all updates completed", result.stdout)
+
+    def test_herdr_upgrade_failure_stops_before_packages_and_releases_lock(self):
+        """Herdr更新失敗後はパッケージ更新へ進まず、既存設定を保持する。"""
+        self.settings.parent.mkdir(parents=True)
+        original = '{"theme":"custom","packages":["npm:unrelated"]}\n'
+        self.settings.write_text(original)
+        self.env["TEST_HERDR_UPGRADE_STATUS"] = "8"
+        result = self.run_update()
+        self.assertEqual(result.returncode, 8)
+        self.assertEqual([call["args"] for call in self.calls()], [
+            ["upgrade", "--no-prune", PI_TOOL],
+            ["upgrade", "--no-prune", HERDR_TOOL],
+        ])
+        self.assertEqual(self.settings.read_text(), original)
+        self.assertFalse(self.lock.exists())
+        self.assertNotIn("all updates completed", result.stdout)
+
+    def test_herdr_version_failure_does_not_report_success(self):
+        """更新後のHerdr確認に失敗した場合も成功と報告しない。"""
+        self.env["TEST_HERDR_VERSION_STATUS"] = "6"
+        result = self.run_update()
+        self.assertEqual(result.returncode, 6)
+        self.assertEqual(self.installs(), [*PACKAGES, f"{SKILLS}@{self.revision}"])
+        self.assertFalse(self.lock.exists())
+        self.assertNotIn("all updates completed", result.stdout)
+
+    def test_herdr_is_declared_in_global_mise_configuration(self):
+        """bootstrapが利用するグローバル定義にHerdrの制約があることを確認する。"""
+        config = tomllib.loads(self.config.read_text())
+        self.assertEqual(config["tools"][HERDR_TOOL], "latest")
 
     def test_package_failure_stops_remaining_updates_without_retry(self):
         for source in (*PACKAGES, f"{SKILLS}@{self.revision}"):
@@ -325,6 +381,7 @@ class MyupdateTests(MyupdateFixture):
         result = self.run_update("--help")
         self.assertEqual(result.returncode, 0)
         self.assertIn("Usage: myupdate", result.stdout)
+        self.assertIn("Pi and Herdr", result.stdout)
         result = self.run_update("unexpected")
         self.assertEqual(result.returncode, 2)
         self.assertIn("Usage: myupdate", result.stderr)
@@ -340,6 +397,9 @@ class MyupdateBootstrapTests(MyupdateFixture):
         bin_source = checkout / "home/dot_local/bin"
         bin_source.mkdir(parents=True)
         (bin_source / SCRIPT.name).write_bytes(SCRIPT.read_bytes())
+        config_source = checkout / "home/dot_config/mise/config.toml"
+        config_source.parent.mkdir(parents=True)
+        config_source.write_bytes((ROOT / "home/dot_config/mise/config.toml").read_bytes())
         ports = checkout / "macports/ports.txt"
         ports.parent.mkdir()
         ports.write_text("git\nchezmoi\njq\n")
@@ -375,6 +435,7 @@ os.execv(args[0], args)
     def test_bootstrap_installs_command_and_delegates_updates_once(self):
         """実際のchezmoiで配置し、初期導入後の更新をmyupdateへ一度だけ委譲する。"""
         bootstrap, checkout = self.prepare_bootstrap()
+        self.config.unlink()
         result = subprocess.run(
             ["/bin/bash", str(bootstrap)], cwd=checkout, env=self.env,
             capture_output=True, text=True,
@@ -383,16 +444,34 @@ os.execv(args[0], args)
         installed = self.home / ".local/bin/myupdate"
         self.assertEqual(installed.read_bytes(), SCRIPT.read_bytes())
         self.assertTrue(os.access(installed, os.X_OK))
+        self.assertEqual(self.config.read_bytes(), (ROOT / "home/dot_config/mise/config.toml").read_bytes())
         self.assertEqual(self.installs(), [*PACKAGES, f"{SKILLS}@{self.revision}"])
         calls = self.calls()
         apply_index = next(i for i, call in enumerate(calls) if call["command"] == "chezmoi")
         install_index = next(i for i, call in enumerate(calls) if call["command"] == "mise" and call["args"] == ["install"])
         upgrades = [i for i, call in enumerate(calls) if call["command"] == "mise" and call["args"][0] == "upgrade"]
-        self.assertEqual(len(upgrades), 1)
+        self.assertEqual([calls[i]["args"] for i in upgrades], [
+            ["upgrade", "--no-prune", PI_TOOL],
+            ["upgrade", "--no-prune", HERDR_TOOL],
+        ])
         self.assertLess(apply_index, install_index)
         self.assertLess(install_index, upgrades[0])
         self.assertEqual(calls[-1]["command"], "defaults")
         self.assertNotIn("sync-skills.sh", bootstrap.read_text())
+
+    def test_bootstrap_stops_before_defaults_when_herdr_update_fails(self):
+        """Herdr更新失敗をbootstrapへ伝播し、後続の実機設定を変更しない。"""
+        bootstrap, checkout = self.prepare_bootstrap()
+        self.env["TEST_HERDR_UPGRADE_STATUS"] = "8"
+        result = subprocess.run(
+            ["/bin/bash", str(bootstrap)], cwd=checkout, env=self.env,
+            capture_output=True, text=True,
+        )
+        self.assertEqual(result.returncode, 8)
+        self.assertEqual(self.calls("pi"), [])
+        self.assertEqual(self.calls("defaults"), [])
+        self.assertFalse(self.lock.exists())
+        self.assertNotIn("all updates completed", result.stdout)
 
     def test_bootstrap_stops_before_defaults_when_daily_update_fails(self):
         """更新失敗をbootstrapにも伝播し、後続の実機設定へ進まないことを確認する。"""

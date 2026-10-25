@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# 更新対象の正本。Pi本体のバージョン制約はmiseのグローバル設定に従う。
+# 更新対象の正本。PiとHerdrのバージョン制約はmiseのグローバル設定に従う。
 PI_TOOL="npm:@earendil-works/pi-coding-agent"
+HERDR_TOOL="aqua:herdrdev/herdr"
 PI_PACKAGES=(
   "npm:pi-web-access"
   "npm:@ogulcancelik/pi-session-recall"
@@ -15,7 +16,7 @@ usage() {
   printf '%s\n' \
     'Usage: myupdate' \
     '' \
-    'Update the mise-managed Pi, managed Pi packages, and agent skills.' \
+    'Update the mise-managed Pi and Herdr, managed Pi packages, and agent skills.' \
     'Run manually before starting work; no sudo or project-local updates.'
 }
 
@@ -72,6 +73,10 @@ fi
 printf '==> updating Pi through mise\n'
 "$mise_bin" upgrade --no-prune "$PI_TOOL"
 
+# 稼働中のHerdrサーバーとペインを停止せず、旧バイナリも保持する。
+printf '==> updating Herdr through mise\n'
+"$mise_bin" upgrade --no-prune "$HERDR_TOOL"
+
 run_pi() {
   # upgrade後に再解決し、シェルのPATHに残った古いPiを使用しない。
   "$mise_bin" exec -- pi "$@"
@@ -92,6 +97,8 @@ run_pi install "git:${SKILLS_REPOSITORY}@${revision}" --no-approve
 printf '==> Pi version and user packages\n'
 run_pi --version
 run_pi list --no-approve
+printf '==> Herdr version\n'
+"$mise_bin" exec -- herdr --version
 printf '%s\n' \
   'myupdate: all updates completed successfully' \
   'Start Pi to begin work. Exit all Pi sessions before the next update.'

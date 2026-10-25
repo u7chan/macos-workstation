@@ -50,7 +50,7 @@ The [`home/`](home/) directory is the source of truth for dotfiles. chezmoi maps
 | [`home/dot_zshrc`](home/dot_zshrc) | `~/.zshrc` | mise activation, shell aliases, Yazi integration, and prompt initialization |
 | [`home/dot_config/mise/config.toml`](home/dot_config/mise/config.toml) | `~/.config/mise/config.toml` | Tool declarations and version constraints |
 | [`gpc`](home/dot_local/bin/executable_gpc) | `~/.local/bin/gpc` | Update a base branch or clean up the current merged PR branch |
-| [`myupdate`](home/dot_local/bin/executable_myupdate) | `~/.local/bin/myupdate` | Daily user-level Pi, managed package, and skill updates |
+| [`myupdate`](home/dot_local/bin/executable_myupdate) | `~/.local/bin/myupdate` | Daily user-level Pi, Herdr, managed package, and skill updates |
 | [Harness launcher](home/dot_local/bin/executable_agent-harness-exec) | `~/.local/bin/agent-harness-exec` | Process-local environment for upstream GitHub/review harnesses |
 | [Harness invocation rule](home/private_dot_pi/private_agent/modify_private_AGENTS.md) | `~/.pi/agent/AGENTS.md` | Updates only a marked instruction block, preserving other instructions |
 | [Font archive declaration](home/.chezmoiexternal.toml) | User font directory declared in the file | Pinned font download, checksum, and included files |
@@ -97,11 +97,21 @@ Launch with `y` to return to the directory selected in Yazi when pressing `q`. P
 
 Current Ghostty and Yazi releases support image previews without additional terminal configuration. The existing managed fonts provide the file icons. For a real-machine check, open a fresh login shell, run `ya env` to inspect terminal and dependency detection, and check image, SVG, and archive previews. Also verify filename/content search, directory-history navigation, and both exit behaviors. If using tmux, follow the upstream [image-preview instructions](https://yazi-rs.github.io/docs/image-preview/#tmux-users); tmux configuration is not managed here.
 
+### Herdr
+
+[Herdr](https://herdr.dev/) is managed through the [mise configuration](home/dot_config/mise/config.toml). Bootstrap installs it with the other declared tools, and [`myupdate`](home/dot_local/bin/executable_myupdate) refreshes it within that declaration's version constraint. Herdr configuration, plugins, and workspace layouts are not managed here.
+
+Run `./bootstrap.sh` after exiting all Pi sessions, then open a new terminal. Check `command -v herdr` and `herdr --version`, then launch `herdr`. An existing standalone installation can shadow the mise-managed binary on PATH; inspect and migrate it separately rather than deleting it automatically.
+
+Updates use mise, not `herdr update`. The updater retains old binaries and never stops or restarts Herdr servers or panes. Launch Herdr again after an update to use the new client; a compatible running server remains on its existing version. Apply server-side changes later with a deliberate restart, following the upstream [update guidance](https://herdr.dev/docs/install/#update). Stopping a server also stops its pane processes, so finish work first.
+
+Automated tests cover update scope, failure propagation, and chezmoi deployment in an isolated HOME. For a real-machine check, verify the resolved binary and version, then check launching, splitting panes, and detaching and reattaching. Tests do not establish terminal rendering or running-server compatibility.
+
 ## Agent skills
 
 Bootstrap delegates Pi package and skill installation to the installed [`myupdate` command](home/dot_local/bin/executable_myupdate), which defines the managed package sources and skill branch. There is no separate bootstrap-only skill updater. Each run resolves the upstream skill branch head to a commit and installs that revision through pi; upstream skill changes do not require a change to this repository. The revision is printed and saved in pi's user package settings. Development checkouts are not used or modified, and unrelated pi settings and package resource filters are preserved.
 
-Exit all Pi sessions before running `myupdate` or bootstrap, then start Pi again after updates finish. See [Daily Pi updates](#daily-pi-updates) for the normal workflow.
+Exit all Pi sessions before running `myupdate` or bootstrap, then start Pi again after updates finish. See [Daily Pi and Herdr updates](#daily-pi-and-herdr-updates) for the normal workflow.
 
 Package installation alone does not provision skill-specific dependencies or guarantee macOS compatibility. Bootstrap provisions the limited GitHub/review dependencies declared in [`macports/ports.txt`](macports/ports.txt); other skill dependencies remain out of scope.
 
@@ -152,7 +162,7 @@ GUI-only macOS settings scripted to avoid manual reconfiguration on a new Mac.
 
 ## Update
 
-### Daily Pi updates
+### Daily Pi and Herdr updates
 
 After starting the computer, exit all Pi sessions, including those in other terminal windows or panes. Then run this manually before beginning work:
 
@@ -160,13 +170,13 @@ After starting the computer, exit all Pi sessions, including those in other term
 myupdate
 ```
 
-Bootstrap installs this command through chezmoi, prepares the mise runtimes, then invokes it once. The installed command works from any directory without the repository checkout. It updates only Pi through mise (within the global tool constraint), installs or refreshes the packages declared in the [command](home/dot_local/bin/executable_myupdate), and resolves and installs the latest configured skill-branch commit. Git packages that track a branch are refreshed to its latest commit on each run. Missing packages are installed on the first run; Pi owns package registration and preserves unrelated settings and resource filters. Existing extension installations are not removed or migrated; check package documentation for conflicts before loading overlapping extensions.
+Bootstrap installs this command through chezmoi, prepares the mise runtimes, then invokes it once. The installed command works from any directory without the repository checkout. It updates only Pi and Herdr through mise (within the global tool constraints), installs or refreshes the packages declared in the [command](home/dot_local/bin/executable_myupdate), and resolves and installs the latest configured skill-branch commit. Git packages that track a branch are refreshed to its latest commit on each run. Missing packages are installed on the first run; Pi owns package registration and preserves unrelated settings and resource filters. Existing extension installations are not removed or migrated; check package documentation for conflicts before loading overlapping extensions.
 
-The `--no-prune` safeguard retains old Pi installations if an update is accidentally run with a session still open. It does not make live package or skill updates safe, and old Pi versions are not scheduled for automatic removal. See [Remove old Pi versions](#remove-old-pi-versions) for optional manual cleanup.
+The `--no-prune` safeguard retains old Pi and Herdr installations so their files remain available to running processes. It does not make live Pi package or skill updates safe, and old versions are not scheduled for automatic removal. Herdr servers and panes are left running; see [Herdr](#herdr) for the separate server-restart considerations. See [Remove old Pi versions](#remove-old-pi-versions) for optional manual cleanup.
 
-The command uses the global mise configuration, ignores project-local Pi configuration, and never runs `sudo`, schedules itself, or updates other runtimes, MacPorts, or macOS settings. It stops on the first failure without retrying or reporting success; already completed updates are not rolled back. Invalid Pi settings stop the command before any update. An atomic directory lock prevents concurrent `myupdate` runs. If an interrupted run leaves a stale lock, check that no update is running before removing the empty lock directory shown in the error.
+The command uses the global mise configuration, ignores project-local Pi configuration, and never runs `sudo`, schedules itself, or updates other tools or runtimes, MacPorts, or macOS settings. It stops on the first failure without retrying or reporting success; already completed updates are not rolled back. Invalid Pi settings stop the command before any update. An atomic directory lock prevents concurrent `myupdate` runs. If an interrupted run leaves a stale lock, check that no update is running before removing the empty lock directory shown in the error.
 
-Start Pi again after the update completes. Check the printed Pi version, user package list, and skill revision. For a real-machine smoke check, confirm the declared extensions load and exercise a public web search and a search for a known local session. Session query can send selected past conversations to the query model; the current project is not a privacy boundary, and WSL sessions are not synchronized automatically.
+Start Pi again after the update completes. Check the printed Pi and Herdr versions, user package list, and skill revision. For a real-machine smoke check, confirm the declared extensions load and exercise a public web search and a search for a known local session. Session query can send selected past conversations to the query model; the current project is not a privacy boundary, and WSL sessions are not synchronized automatically.
 
 ### Reapply workstation configuration
 

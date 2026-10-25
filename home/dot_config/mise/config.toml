@@ -3,6 +3,7 @@ node = "26"
 python = "3.13"
 uv = "latest"
 "npm:@earendil-works/pi-coding-agent" = "latest"
+"aqua:herdrdev/herdr" = "latest"
 "aqua:cli/cli" = "latest"
 "aqua:starship/starship" = "latest"
 

@@ -72,7 +72,7 @@ mise exec -- python3 -V
 mise exec -- gh --version
 mise exec -- starship --version
 
-# 6) Pi本体・Pi Packages・スキルの導入と更新は、配置済みの日次コマンドへ委譲する。
+# 6) Pi本体・Herdr・Pi Packages・スキルの導入と更新は、配置済みの日次コマンドへ委譲する。
 "$HOME/.local/bin/myupdate"
 
 # 7) macOS defaults 適用（GUI で手動設定している設定。冪等・自動検証）
