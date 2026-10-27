@@ -25,6 +25,8 @@ PACKAGES = ("npm:pi-web-access", "npm:@ogulcancelik/pi-session-recall", MYPI)
 SKILLS = "git:github.com/u7chan/agent-harness"
 PI_TOOL = "npm:@earendil-works/pi-coding-agent"
 HERDR_TOOL = "aqua:herdrdev/herdr"
+EXTRA_TOOLS = ("aqua:pnpm/pnpm", "bun")
+INVENTORY_ARGS = ["ls", "--global", "--json"]
 
 
 @unittest.skipUnless(GIT and JQ, "git and jq are required for update tests")
@@ -47,7 +49,9 @@ class MyupdateFixture(unittest.TestCase):
         self.project_settings = self.project / ".pi/settings.json"
         self.project_settings.parent.mkdir()
         self.project_settings.write_text('{"packages":["npm:project-only"]}\n')
-        (self.project / "mise.toml").write_text('[tools]\nnode = "18"\n')
+        (self.project / "mise.toml").write_text(
+            '[tools]\nnode = "18"\nbun = "1.0.0"\n"npm:project-only" = "latest"\n'
+        )
         self.env = {
             key: value for key, value in os.environ.items()
             if not key.startswith(("PI_", "MISE_", "GIT_", "XDG_", "BASH_FUNC_"))
@@ -78,13 +82,24 @@ if "TEST_GIT_OUTPUT" in os.environ:
 os.execv(os.environ["REAL_GIT"], [os.environ["REAL_GIT"], *sys.argv[1:]])
 ''')
         self.write_command("mise", '''
+from pathlib import Path
+import tomllib
 args = sys.argv[1:]
 record("mise", args)
+if args == ["ls", "--global", "--json"]:
+    if "TEST_INVENTORY_OUTPUT" in os.environ:
+        print(os.environ["TEST_INVENTORY_OUTPUT"], end="")
+    else:
+        tools = tomllib.loads(Path(os.environ["MISE_CONFIG_FILE"]).read_text())["tools"]
+        print(json.dumps({name: [{"installed": False}] for name in tools}))
+    sys.exit(int(os.environ.get("TEST_INVENTORY_STATUS", "0")))
 if args[:2] == ["upgrade", "--no-prune"]:
     if args[2:] == ["npm:@earendil-works/pi-coding-agent"]:
         sys.exit(int(os.environ.get("TEST_UPGRADE_STATUS", "0")))
     if args[2:] == ["aqua:herdrdev/herdr"]:
         sys.exit(int(os.environ.get("TEST_HERDR_UPGRADE_STATUS", "0")))
+    if len(args) == 3 and (args[2] in ("bun", "pnpm", "aqua:pnpm/pnpm") or args[2].startswith("npm:")):
+        sys.exit(5 if args[2] == os.environ.get("TEST_FAILED_TOOL") else 0)
     sys.exit(99)
 if args == ["install"]:
     sys.exit(0)
@@ -180,6 +195,9 @@ settings.write_text(json.dumps(data) + "\\n")
     def installs(self):
         return [call["args"][1] for call in self.calls("pi") if call["args"][0] == "install"]
 
+    def upgrades(self):
+        return [call["args"] for call in self.calls("mise") if call["args"][0] == "upgrade"]
+
     def assert_success(self, result):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("all updates completed successfully", result.stdout)
@@ -193,17 +211,18 @@ settings.write_text(json.dumps(data) + "\\n")
         self.assertEqual(self.project_settings.read_text(), '{"packages":["npm:project-only"]}\n')
 
 class MyupdateTests(MyupdateFixture):
-    def test_installs_only_managed_packages_after_upgrading_pi_and_herdr(self):
+    def test_updates_only_selected_global_tools_before_managed_packages(self):
+        """グローバルの対象だけを更新し、プロジェクト依存と他のツールは変更しない。"""
         result = self.run_update()
         self.assert_success(result)
         self.assertEqual(self.installs(), [*PACKAGES, f"{SKILLS}@{self.revision}"])
-        self.assertEqual([call["args"] for call in self.calls()[:2]], [
+        self.assertEqual([call["args"] for call in self.calls()[:3]], [
+            INVENTORY_ARGS,
             ["upgrade", "--no-prune", PI_TOOL],
             ["upgrade", "--no-prune", HERDR_TOOL],
         ])
-        self.assertEqual([call["args"] for call in self.calls("mise") if call["args"][0] == "upgrade"], [
-            ["upgrade", "--no-prune", PI_TOOL],
-            ["upgrade", "--no-prune", HERDR_TOOL],
+        self.assertEqual(self.upgrades(), [
+            ["upgrade", "--no-prune", tool] for tool in (PI_TOOL, HERDR_TOOL, *EXTRA_TOOLS)
         ])
         self.assertEqual([call["args"] for call in self.calls("herdr")], [["--version"]])
         for call in self.calls():
@@ -250,6 +269,7 @@ class MyupdateTests(MyupdateFixture):
         result = self.run_update()
         self.assertEqual(result.returncode, 9)
         self.assertEqual([call["args"] for call in self.calls()], [
+            INVENTORY_ARGS,
             ["upgrade", "--no-prune", PI_TOOL],
         ])
         self.assertFalse(self.lock.exists())
@@ -264,12 +284,98 @@ class MyupdateTests(MyupdateFixture):
         result = self.run_update()
         self.assertEqual(result.returncode, 8)
         self.assertEqual([call["args"] for call in self.calls()], [
+            INVENTORY_ARGS,
             ["upgrade", "--no-prune", PI_TOOL],
             ["upgrade", "--no-prune", HERDR_TOOL],
         ])
         self.assertEqual(self.settings.read_text(), original)
         self.assertFalse(self.lock.exists())
         self.assertNotIn("all updates completed", result.stdout)
+
+    def test_additional_global_npm_clis_are_discovered_without_updater_changes(self):
+        """npm製CLIの宣言だけで更新対象になり、Piは重複更新しない。"""
+        with self.config.open("a") as config:
+            config.write('"npm:@fixture/cli" = "2"\n"npm:prettier" = "3"\n')
+        original = self.config.read_bytes()
+        self.assert_success(self.run_update())
+        self.assertEqual(self.upgrades(), [
+            ["upgrade", "--no-prune", tool]
+            for tool in (PI_TOOL, HERDR_TOOL, *EXTRA_TOOLS, "npm:@fixture/cli", "npm:prettier")
+        ])
+        self.assertEqual(self.config.read_bytes(), original)
+
+    def test_empty_extra_selection_never_upgrades_all_tools(self):
+        """対象が空でも引数なしのupgradeを呼ばず、全ツール更新を防ぐ。"""
+        self.config.write_text(
+            f'[tools]\n"{PI_TOOL}" = "latest"\n"{HERDR_TOOL}" = "latest"\n'
+            'node = "26"\npython = "3.13"\nuv = "latest"\n'
+        )
+        self.assert_success(self.run_update())
+        self.assertEqual(self.upgrades(), [
+            ["upgrade", "--no-prune", PI_TOOL],
+            ["upgrade", "--no-prune", HERDR_TOOL],
+        ])
+
+    def test_npm_and_shorthand_pnpm_declarations_are_supported(self):
+        """pnpmを別バックエンドで宣言しても設定上の識別子で更新する。"""
+        self.config.write_text(self.config.read_text().replace(
+            '"aqua:pnpm/pnpm" = "latest"', 'pnpm = "latest"\n"npm:pnpm" = "latest"'
+        ))
+        self.assert_success(self.run_update())
+        self.assertEqual(self.upgrades(), [
+            ["upgrade", "--no-prune", tool]
+            for tool in (PI_TOOL, HERDR_TOOL, "bun", "npm:pnpm", "pnpm")
+        ])
+
+    def test_inventory_failure_stops_before_all_updates_and_releases_lock(self):
+        """有効な一覧が出力されても取得失敗なら更新を始めない。"""
+        self.env.update(TEST_INVENTORY_STATUS="4", TEST_INVENTORY_OUTPUT='{"bun": []}')
+        result = self.run_update()
+        self.assertEqual(result.returncode, 4)
+        self.assertEqual([call["args"] for call in self.calls()], [INVENTORY_ARGS])
+        self.assertFalse(self.lock.exists())
+        self.assertNotIn("all updates completed", result.stdout)
+
+    def test_invalid_inventory_stops_before_all_updates(self):
+        """壊れたJSONやオブジェクト以外の一覧で更新範囲を拡大しない。"""
+        for output in ("", "{", "null", "[]", '"bun"', '{}\n{}', '{"bun": []}\ninvalid'):
+            with self.subTest(output=output):
+                self.log.unlink(missing_ok=True)
+                self.env["TEST_INVENTORY_OUTPUT"] = output
+                result = self.run_update()
+                self.assertNotEqual(result.returncode, 0)
+                self.assertEqual([call["args"] for call in self.calls()], [INVENTORY_ARGS])
+                self.assertFalse(self.lock.exists())
+                self.assertNotIn("all updates completed", result.stdout)
+
+    def test_extra_tool_failure_stops_before_packages_and_preserves_settings(self):
+        """追加ツール更新の失敗時は再試行せず、Pi設定と後続処理を保護する。"""
+        with self.config.open("a") as config:
+            config.write('"npm:fixture-cli" = "latest"\n')
+        self.settings.parent.mkdir(parents=True)
+        original = '{"theme":"custom","packages":["npm:unrelated"]}\n'
+        self.settings.write_text(original)
+        tools = (PI_TOOL, HERDR_TOOL, *EXTRA_TOOLS, "npm:fixture-cli")
+        for tool in tools[2:]:
+            with self.subTest(tool=tool):
+                self.log.unlink(missing_ok=True)
+                self.env["TEST_FAILED_TOOL"] = tool
+                result = self.run_update()
+                self.assertEqual(result.returncode, 5)
+                self.assertEqual(self.upgrades(), [
+                    ["upgrade", "--no-prune", name] for name in tools[:tools.index(tool) + 1]
+                ])
+                self.assertEqual(self.calls("pi"), [])
+                self.assertEqual(self.settings.read_text(), original)
+                self.assertFalse(self.lock.exists())
+                self.assertNotIn("all updates completed", result.stdout)
+
+    def test_javascript_tools_are_declared_in_global_mise_configuration(self):
+        """bootstrap用の正本にBunとAqua版pnpmの宣言があることを確認する。"""
+        config = tomllib.loads(self.config.read_text())
+        for tool in EXTRA_TOOLS:
+            with self.subTest(tool=tool):
+                self.assertEqual(config["tools"][tool], "latest")
 
     def test_herdr_version_failure_does_not_report_success(self):
         """更新後のHerdr確認に失敗した場合も成功と報告しない。"""
@@ -346,6 +452,20 @@ class MyupdateTests(MyupdateFixture):
         self.assertFalse(self.settings.exists())
         self.assertFalse((state / "macos-workstation/myupdate.lock").exists())
         self.assertEqual((state / "macos-workstation").stat().st_mode & 0o077, 0)
+
+    def test_custom_mise_configuration_directory_is_respected(self):
+        """空白を含むXDG設定先でも、そのグローバル宣言だけを参照する。"""
+        config_home = self.root / "custom config"
+        destination = config_home / "mise/config.toml"
+        destination.parent.mkdir(parents=True)
+        self.config.rename(destination)
+        self.config = destination
+        self.env["XDG_CONFIG_HOME"] = str(config_home)
+        self.assert_success(self.run_update())
+        self.assertTrue(all(call["config"] == str(self.config) for call in self.calls()))
+        self.assertEqual(self.upgrades(), [
+            ["upgrade", "--no-prune", tool] for tool in (PI_TOOL, HERDR_TOOL, *EXTRA_TOOLS)
+        ])
 
     def test_caller_mise_config_does_not_override_global_configuration(self):
         self.env["MISE_CONFIG_FILE"] = str(self.project / "mise.toml")
@@ -451,8 +571,7 @@ os.execv(args[0], args)
         install_index = next(i for i, call in enumerate(calls) if call["command"] == "mise" and call["args"] == ["install"])
         upgrades = [i for i, call in enumerate(calls) if call["command"] == "mise" and call["args"][0] == "upgrade"]
         self.assertEqual([calls[i]["args"] for i in upgrades], [
-            ["upgrade", "--no-prune", PI_TOOL],
-            ["upgrade", "--no-prune", HERDR_TOOL],
+            ["upgrade", "--no-prune", tool] for tool in (PI_TOOL, HERDR_TOOL, *EXTRA_TOOLS)
         ])
         self.assertLess(apply_index, install_index)
         self.assertLess(install_index, upgrades[0])
@@ -468,6 +587,20 @@ os.execv(args[0], args)
             capture_output=True, text=True,
         )
         self.assertEqual(result.returncode, 8)
+        self.assertEqual(self.calls("pi"), [])
+        self.assertEqual(self.calls("defaults"), [])
+        self.assertFalse(self.lock.exists())
+        self.assertNotIn("all updates completed", result.stdout)
+
+    def test_bootstrap_stops_before_defaults_when_javascript_tool_update_fails(self):
+        """追加ツール更新失敗をbootstrapへ伝播し、後続の実機設定を変更しない。"""
+        bootstrap, checkout = self.prepare_bootstrap()
+        self.env["TEST_FAILED_TOOL"] = "bun"
+        result = subprocess.run(
+            ["/bin/bash", str(bootstrap)], cwd=checkout, env=self.env,
+            capture_output=True, text=True,
+        )
+        self.assertEqual(result.returncode, 5)
         self.assertEqual(self.calls("pi"), [])
         self.assertEqual(self.calls("defaults"), [])
         self.assertFalse(self.lock.exists())

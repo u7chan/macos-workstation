@@ -2,6 +2,8 @@
 node = "26"
 python = "3.13"
 uv = "latest"
+bun = "latest"
+"aqua:pnpm/pnpm" = "latest"
 "npm:@earendil-works/pi-coding-agent" = "latest"
 "aqua:herdrdev/herdr" = "latest"
 "aqua:cli/cli" = "latest"

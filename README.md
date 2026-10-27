@@ -50,7 +50,7 @@ The [`home/`](home/) directory is the source of truth for dotfiles. chezmoi maps
 | [`home/dot_zshrc`](home/dot_zshrc) | `~/.zshrc` | mise activation, shell aliases, Yazi integration, and prompt initialization |
 | [`home/dot_config/mise/config.toml`](home/dot_config/mise/config.toml) | `~/.config/mise/config.toml` | Tool declarations and version constraints |
 | [`gpc`](home/dot_local/bin/executable_gpc) | `~/.local/bin/gpc` | Update a base branch or clean up the current merged PR branch |
-| [`myupdate`](home/dot_local/bin/executable_myupdate) | `~/.local/bin/myupdate` | Daily user-level Pi, Herdr, managed package, and skill updates |
+| [`myupdate`](home/dot_local/bin/executable_myupdate) | `~/.local/bin/myupdate` | Daily user-level tool, Pi package, and skill updates |
 | [Harness launcher](home/dot_local/bin/executable_agent-harness-exec) | `~/.local/bin/agent-harness-exec` | Process-local environment for upstream GitHub/review harnesses |
 | [Harness invocation rule](home/private_dot_pi/private_agent/modify_private_AGENTS.md) | `~/.pi/agent/AGENTS.md` | Updates only a marked instruction block, preserving other instructions |
 | [Font archive declaration](home/.chezmoiexternal.toml) | User font directory declared in the file | Pinned font download, checksum, and included files |
@@ -97,6 +97,16 @@ Launch with `y` to return to the directory selected in Yazi when pressing `q`. P
 
 Current Ghostty and Yazi releases support image previews without additional terminal configuration. The existing managed fonts provide the file icons. For a real-machine check, open a fresh login shell, run `ya env` to inspect terminal and dependency detection, and check image, SVG, and archive previews. Also verify filename/content search, directory-history navigation, and both exit behaviors. If using tmux, follow the upstream [image-preview instructions](https://yazi-rs.github.io/docs/image-preview/#tmux-users); tmux configuration is not managed here.
 
+### JavaScript tools and global CLIs
+
+Declare shared JavaScript tools in the [global mise configuration](home/dot_config/mise/config.toml), which is the source of truth for installed tools and version constraints. Bootstrap installs those declarations; the existing [zsh configuration](home/dot_zshrc) activates mise so their commands are available from any working directory. Project-local mise settings can select a different version.
+
+For an npm-distributed CLI, add an `npm:<package-name>` tool entry to that configuration instead of installing it with `npm install -g`, `bun add -g`, or `pnpm add -g`. mise manages each CLI separately from those package managers' global prefixes, so use `mise ls --global` rather than `npm list -g` to inspect the managed tools. Keep project dependencies in each project's `package.json` and lockfile.
+
+[`myupdate`](home/dot_local/bin/executable_myupdate) discovers declared global npm CLIs automatically and updates them and the supported JavaScript runtime/package-manager tools through mise. It does not import, update, or delete packages previously installed into standalone npm, Bun, or pnpm global directories. Inspect existing commands with `command -v` and migrate duplicates separately; they can shadow mise-managed commands on PATH. Do not use a tool's self-updater to replace a mise-managed binary.
+
+For a real-machine check after bootstrap, open a new login terminal and verify `command -v bun`, `bun -v`, `command -v pnpm`, and `pnpm -v` from an unrelated directory. Check `mise ls --global` and confirm that project-specific version selections and dependencies are unchanged. Automated update tests simulate external installations and do not replace this check.
+
 ### Herdr
 
 [Herdr](https://herdr.dev/) is managed through the [mise configuration](home/dot_config/mise/config.toml). Bootstrap installs it with the other declared tools, and [`myupdate`](home/dot_local/bin/executable_myupdate) refreshes it within that declaration's version constraint. Herdr configuration, plugins, and workspace layouts are not managed here.
@@ -111,7 +121,7 @@ Automated tests cover update scope, failure propagation, and chezmoi deployment 
 
 Bootstrap delegates Pi package and skill installation to the installed [`myupdate` command](home/dot_local/bin/executable_myupdate), which defines the managed package sources and skill branch. There is no separate bootstrap-only skill updater. Each run resolves the upstream skill branch head to a commit and installs that revision through pi; upstream skill changes do not require a change to this repository. The revision is printed and saved in pi's user package settings. Development checkouts are not used or modified, and unrelated pi settings and package resource filters are preserved.
 
-Exit all Pi sessions before running `myupdate` or bootstrap, then start Pi again after updates finish. See [Daily Pi and Herdr updates](#daily-pi-and-herdr-updates) for the normal workflow.
+Exit all Pi sessions before running `myupdate` or bootstrap, then start Pi again after updates finish. See [Daily user-level updates](#daily-user-level-updates) for the normal workflow.
 
 Package installation alone does not provision skill-specific dependencies or guarantee macOS compatibility. Bootstrap provisions the limited GitHub/review dependencies declared in [`macports/ports.txt`](macports/ports.txt); other skill dependencies remain out of scope.
 
@@ -162,7 +172,7 @@ GUI-only macOS settings scripted to avoid manual reconfiguration on a new Mac.
 
 ## Update
 
-### Daily Pi and Herdr updates
+### Daily user-level updates
 
 After starting the computer, exit all Pi sessions, including those in other terminal windows or panes. Then run this manually before beginning work:
 
@@ -170,11 +180,11 @@ After starting the computer, exit all Pi sessions, including those in other term
 myupdate
 ```
 
-Bootstrap installs this command through chezmoi, prepares the mise runtimes, then invokes it once. The installed command works from any directory without the repository checkout. It updates only Pi and Herdr through mise (within the global tool constraints), installs or refreshes the packages declared in the [command](home/dot_local/bin/executable_myupdate), and resolves and installs the latest configured skill-branch commit. Git packages that track a branch are refreshed to its latest commit on each run. Missing packages are installed on the first run; Pi owns package registration and preserves unrelated settings and resource filters. Existing extension installations are not removed or migrated; check package documentation for conflicts before loading overlapping extensions.
+Bootstrap installs this command through chezmoi, prepares the mise runtimes, then invokes it once. The installed command works from any directory without the repository checkout. It updates Pi and Herdr plus the declared global JavaScript tools through mise (within the global tool constraints), installs or refreshes the Pi packages declared in the [command](home/dot_local/bin/executable_myupdate), and resolves and installs the latest configured skill-branch commit. The command selects the supported JavaScript runtime/package-manager tools and all `npm:` entries from mise's global inventory; adding another global npm CLI does not require editing the updater. Git packages that track a branch are refreshed to its latest commit on each run. Missing packages are installed on the first run; Pi owns package registration and preserves unrelated settings and resource filters. Existing extension installations are not removed or migrated; check package documentation for conflicts before loading overlapping extensions.
 
-The `--no-prune` safeguard retains old Pi and Herdr installations so their files remain available to running processes. It does not make live Pi package or skill updates safe, and old versions are not scheduled for automatic removal. Herdr servers and panes are left running; see [Herdr](#herdr) for the separate server-restart considerations. See [Remove old Pi versions](#remove-old-pi-versions) for optional manual cleanup.
+The `--no-prune` safeguard retains old installations for every updated mise tool so their files remain available to running processes. It does not make live Pi package or skill updates safe, and old versions are not scheduled for automatic removal. Herdr servers and panes are left running; see [Herdr](#herdr) for the separate server-restart considerations. See [Remove old Pi versions](#remove-old-pi-versions) for optional manual cleanup.
 
-The command uses the global mise configuration, ignores project-local Pi configuration, and never runs `sudo`, schedules itself, or updates other tools or runtimes, MacPorts, or macOS settings. It stops on the first failure without retrying or reporting success; already completed updates are not rolled back. Invalid Pi settings stop the command before any update. An atomic directory lock prevents concurrent `myupdate` runs. If an interrupted run leaves a stale lock, check that no update is running before removing the empty lock directory shown in the error.
+The command uses the global mise configuration and ignores project-local mise and Pi configuration. It never runs `sudo` or schedules itself, and it does not update Node.js, Python, other mise tools outside its selection policy, project dependencies, standalone package-manager global directories, MacPorts, or macOS settings. It stops on the first failure without retrying or reporting success; already completed updates are not rolled back. Invalid Pi settings stop the command before any update. An atomic directory lock prevents concurrent `myupdate` runs. If an interrupted run leaves a stale lock, check that no update is running before removing the empty lock directory shown in the error.
 
 Start Pi again after the update completes. Check the printed Pi and Herdr versions, user package list, and skill revision. For a real-machine smoke check, confirm the declared extensions load and exercise a public web search and a search for a known local session. Session query can send selected past conversations to the query model; the current project is not a privacy boundary, and WSL sessions are not synchronized automatically.
 

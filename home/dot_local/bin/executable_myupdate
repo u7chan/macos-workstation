@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# 更新対象の正本。PiとHerdrのバージョン制約はmiseのグローバル設定に従う。
+# Pi固有の更新対象。ツールの宣言とバージョン制約はmiseのグローバル設定に従う。
 PI_TOOL="npm:@earendil-works/pi-coding-agent"
 HERDR_TOOL="aqua:herdrdev/herdr"
 PI_PACKAGES=(
@@ -16,7 +16,7 @@ usage() {
   printf '%s\n' \
     'Usage: myupdate' \
     '' \
-    'Update the mise-managed Pi and Herdr, managed Pi packages, and agent skills.' \
+    'Update mise-managed Pi and Herdr, global JavaScript tools, Pi packages, and skills.' \
     'Run manually before starting work; no sudo or project-local updates.'
 }
 
@@ -69,6 +69,16 @@ if [[ -e $settings || -L $settings ]]; then
   ' "$settings" >/dev/null || die "invalid Pi settings; keeping existing data: $settings"
 fi
 
+# 宣言済みのグローバルツールだけを列挙し、取得・解析に失敗したら更新前に停止する。
+# npm製CLIは設定への追加だけで対象にする。Piは下で一度だけ更新する。
+extra_tools="$("$mise_bin" ls --global --json | jq -sr --arg pi "$PI_TOOL" '
+  if length == 1 and (.[0] | type == "object") then
+    .[0] | keys[]
+    | select(. != $pi)
+    | select(. == "bun" or . == "pnpm" or . == "aqua:pnpm/pnpm" or startswith("npm:"))
+  else error("invalid mise tool inventory") end
+')"
+
 # 実行中のPiが参照している旧インストールは削除しない。
 printf '==> updating Pi through mise\n'
 "$mise_bin" upgrade --no-prune "$PI_TOOL"
@@ -76,6 +86,13 @@ printf '==> updating Pi through mise\n'
 # 稼働中のHerdrサーバーとペインを停止せず、旧バイナリも保持する。
 printf '==> updating Herdr through mise\n'
 "$mise_bin" upgrade --no-prune "$HERDR_TOOL"
+
+# 空の一覧で引数なしのupgradeを呼ばず、プロジェクト依存や他のランタイムを更新しない。
+while IFS= read -r tool; do
+  [[ -n $tool ]] || continue
+  printf '==> updating global tool %s through mise\n' "$tool"
+  "$mise_bin" upgrade --no-prune "$tool"
+done <<< "$extra_tools"
 
 run_pi() {
   # upgrade後に再解決し、シェルのPATHに残った古いPiを使用しない。
