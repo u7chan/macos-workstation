@@ -25,7 +25,7 @@ PACKAGES = ("npm:pi-web-access", "npm:@ogulcancelik/pi-session-recall", MYPI)
 SKILLS = "git:github.com/u7chan/agent-harness"
 PI_TOOL = "npm:@earendil-works/pi-coding-agent"
 HERDR_TOOL = "aqua:herdrdev/herdr"
-EXTRA_TOOLS = ("aqua:pnpm/pnpm", "bun")
+EXTRA_TOOLS = ("bun", "npm:pnpm")
 INVENTORY_ARGS = ["config", "ls", "--json"]
 
 
@@ -307,7 +307,7 @@ class MyupdateTests(MyupdateFixture):
         self.assert_success(self.run_update())
         self.assertEqual(self.upgrades(), [
             ["upgrade", "--no-prune", tool]
-            for tool in (PI_TOOL, HERDR_TOOL, *EXTRA_TOOLS, "npm:@fixture/cli", "npm:prettier")
+            for tool in (PI_TOOL, HERDR_TOOL, *sorted((*EXTRA_TOOLS, "npm:@fixture/cli", "npm:prettier")))
         ])
         self.assertEqual(self.config.read_bytes(), original)
 
@@ -392,15 +392,16 @@ class MyupdateTests(MyupdateFixture):
             ["upgrade", "--no-prune", HERDR_TOOL],
         ])
 
-    def test_npm_and_shorthand_pnpm_declarations_are_supported(self):
-        """pnpmを別バックエンドで宣言しても設定上の識別子で更新する。"""
+    def test_aqua_and_shorthand_pnpm_overrides_are_selected_by_declared_name(self):
+        """利用者が別方式を指定した場合も宣言上の識別子で選択する。実インストール可否は別途確認する。"""
         self.config.write_text(self.config.read_text().replace(
-            '"aqua:pnpm/pnpm" = "latest"', 'pnpm = "latest"\n"npm:pnpm" = "latest"'
+            '"npm:pnpm" = { version = "latest", allow_builds = ["pnpm"] }',
+            'pnpm = "latest"\n"aqua:pnpm/pnpm" = "latest"'
         ))
         self.assert_success(self.run_update())
         self.assertEqual(self.upgrades(), [
             ["upgrade", "--no-prune", tool]
-            for tool in (PI_TOOL, HERDR_TOOL, "bun", "npm:pnpm", "pnpm")
+            for tool in (PI_TOOL, HERDR_TOOL, "aqua:pnpm/pnpm", "bun", "pnpm")
         ])
 
     def test_inventory_failure_stops_before_all_updates_and_releases_lock(self):
@@ -436,7 +437,7 @@ class MyupdateTests(MyupdateFixture):
         self.settings.parent.mkdir(parents=True)
         original = '{"theme":"custom","packages":["npm:unrelated"]}\n'
         self.settings.write_text(original)
-        tools = (PI_TOOL, HERDR_TOOL, *EXTRA_TOOLS, "npm:fixture-cli")
+        tools = (PI_TOOL, HERDR_TOOL, *sorted((*EXTRA_TOOLS, "npm:fixture-cli")))
         for tool in tools[2:]:
             with self.subTest(tool=tool):
                 self.log.unlink(missing_ok=True)
@@ -452,11 +453,12 @@ class MyupdateTests(MyupdateFixture):
                 self.assertNotIn("all updates completed", result.stdout)
 
     def test_javascript_tools_are_declared_in_global_mise_configuration(self):
-        """bootstrap用の正本にBunとAqua版pnpmの宣言があることを確認する。"""
-        config = tomllib.loads(self.config.read_text())
-        for tool in EXTRA_TOOLS:
-            with self.subTest(tool=tool):
-                self.assertEqual(config["tools"][tool], "latest")
+        """npm版pnpmと本体だけのスクリプト許可を固定し、Intel非対応や起動不能への回帰を防ぐ。"""
+        tools = tomllib.loads(self.config.read_text())["tools"]
+        self.assertEqual(tools["bun"], "latest")
+        self.assertEqual(tools["npm:pnpm"], {"version": "latest", "allow_builds": ["pnpm"]})
+        self.assertNotIn("aqua:pnpm/pnpm", tools)
+        self.assertNotIn("pnpm", tools)
 
     def test_herdr_version_failure_does_not_report_success(self):
         """更新後のHerdr確認に失敗した場合も成功と報告しない。"""
