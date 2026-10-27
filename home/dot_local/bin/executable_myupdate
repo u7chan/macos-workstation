@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# 更新対象の正本。PiとHerdrのバージョン制約はmiseのグローバル設定に従う。
+# Pi固有の更新対象。ツールの宣言とバージョン制約はmiseのグローバル設定に従う。
 PI_TOOL="npm:@earendil-works/pi-coding-agent"
 HERDR_TOOL="aqua:herdrdev/herdr"
 PI_PACKAGES=(
@@ -16,7 +16,7 @@ usage() {
   printf '%s\n' \
     'Usage: myupdate' \
     '' \
-    'Update the mise-managed Pi and Herdr, managed Pi packages, and agent skills.' \
+    'Update mise-managed Pi and Herdr, global JavaScript tools, Pi packages, and skills.' \
     'Run manually before starting work; no sudo or project-local updates.'
 }
 
@@ -69,6 +69,32 @@ if [[ -e $settings || -L $settings ]]; then
   ' "$settings" >/dev/null || die "invalid Pi settings; keeping existing data: $settings"
 fi
 
+# lsは版解決に失敗したツールを省略するため、版解決しない設定メタデータを使う。
+config_entries="$("$mise_bin" config ls --json | jq -sc '
+  if length == 1 and (.[0] | type == "array" and all(.[];
+    type == "object" and (.path | type == "string")
+    and (.tools | type == "array" and all(.[]; type == "string"))
+  )) then .[0][] else error("invalid mise config inventory") end
+')"
+
+# 他の設定は取り込まず、シンボリックリンクや物理パス表記の違いは同一ファイルとして扱う。
+global_tools=''
+while IFS= read -r entry; do
+  [[ -n $entry ]] || continue
+  config_path="$(jq -r '.path' <<< "$entry")"
+  [[ $config_path -ef $MISE_CONFIG_FILE ]] || continue
+  [[ -z $global_tools ]] || die "duplicate global mise configuration in declaration inventory"
+  global_tools="$(jq -c '.tools' <<< "$entry")"
+done <<< "$config_entries"
+[[ -n $global_tools ]] || die "global mise configuration not found in declaration inventory"
+
+# npm製CLIは宣言だけで対象にする。Piは下で一度だけ更新する。
+extra_tools="$(jq -r --arg pi "$PI_TOOL" '
+  unique[]
+  | select(. != $pi)
+  | select(. == "bun" or . == "pnpm" or . == "aqua:pnpm/pnpm" or startswith("npm:"))
+' <<< "$global_tools")"
+
 # 実行中のPiが参照している旧インストールは削除しない。
 printf '==> updating Pi through mise\n'
 "$mise_bin" upgrade --no-prune "$PI_TOOL"
@@ -76,6 +102,13 @@ printf '==> updating Pi through mise\n'
 # 稼働中のHerdrサーバーとペインを停止せず、旧バイナリも保持する。
 printf '==> updating Herdr through mise\n'
 "$mise_bin" upgrade --no-prune "$HERDR_TOOL"
+
+# 空の一覧で引数なしのupgradeを呼ばず、プロジェクト依存や他のランタイムを更新しない。
+while IFS= read -r tool; do
+  [[ -n $tool ]] || continue
+  printf '==> updating global tool %s through mise\n' "$tool"
+  "$mise_bin" upgrade --no-prune "$tool"
+done <<< "$extra_tools"
 
 run_pi() {
   # upgrade後に再解決し、シェルのPATHに残った古いPiを使用しない。
