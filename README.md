@@ -99,7 +99,7 @@ Current Ghostty and Yazi releases support image previews without additional term
 
 ### JavaScript tools and global CLIs
 
-Declare shared JavaScript tools in the [global mise configuration](home/dot_config/mise/config.toml), which is the source of truth for installed tools and version constraints. Bootstrap installs those declarations; the existing [zsh configuration](home/dot_zshrc) activates mise so their commands are available from any working directory. Project-local mise settings can select a different version.
+Declare shared JavaScript tools in the [global mise configuration](home/dot_config/mise/config.toml), which is the source of truth for installed tools and version constraints. Bootstrap installs those declarations; the existing [zsh configuration](home/dot_zshrc) activates mise so their commands are available from any working directory. Project-local mise settings can select a different version. pnpm uses an explicit npm backend so Intel Macs do not depend on Aqua's standalone-binary platform coverage; keep that backend explicit rather than using the registry-dependent shorthand. Its narrowly scoped build-script approval lets the package replace command stubs with its native executable; do not broaden that approval to all packages.
 
 For an npm-distributed CLI, add an `npm:<package-name>` tool entry to that configuration instead of installing it with `npm install -g`, `bun add -g`, or `pnpm add -g`. mise manages each CLI separately from those package managers' global prefixes, so use `mise ls --global` rather than `npm list -g` to inspect the managed tools. Keep project dependencies in each project's `package.json` and lockfile.
 
