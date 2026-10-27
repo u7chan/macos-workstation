@@ -69,15 +69,31 @@ if [[ -e $settings || -L $settings ]]; then
   ' "$settings" >/dev/null || die "invalid Pi settings; keeping existing data: $settings"
 fi
 
-# 宣言済みのグローバルツールだけを列挙し、取得・解析に失敗したら更新前に停止する。
-# npm製CLIは設定への追加だけで対象にする。Piは下で一度だけ更新する。
-extra_tools="$("$mise_bin" ls --global --json | jq -sr --arg pi "$PI_TOOL" '
-  if length == 1 and (.[0] | type == "object") then
-    .[0] | keys[]
-    | select(. != $pi)
-    | select(. == "bun" or . == "pnpm" or . == "aqua:pnpm/pnpm" or startswith("npm:"))
-  else error("invalid mise tool inventory") end
+# lsは版解決に失敗したツールを省略するため、版解決しない設定メタデータを使う。
+config_entries="$("$mise_bin" config ls --json | jq -sc '
+  if length == 1 and (.[0] | type == "array" and all(.[];
+    type == "object" and (.path | type == "string")
+    and (.tools | type == "array" and all(.[]; type == "string"))
+  )) then .[0][] else error("invalid mise config inventory") end
 ')"
+
+# 他の設定は取り込まず、シンボリックリンクや物理パス表記の違いは同一ファイルとして扱う。
+global_tools=''
+while IFS= read -r entry; do
+  [[ -n $entry ]] || continue
+  config_path="$(jq -r '.path' <<< "$entry")"
+  [[ $config_path -ef $MISE_CONFIG_FILE ]] || continue
+  [[ -z $global_tools ]] || die "duplicate global mise configuration in declaration inventory"
+  global_tools="$(jq -c '.tools' <<< "$entry")"
+done <<< "$config_entries"
+[[ -n $global_tools ]] || die "global mise configuration not found in declaration inventory"
+
+# npm製CLIは宣言だけで対象にする。Piは下で一度だけ更新する。
+extra_tools="$(jq -r --arg pi "$PI_TOOL" '
+  unique[]
+  | select(. != $pi)
+  | select(. == "bun" or . == "pnpm" or . == "aqua:pnpm/pnpm" or startswith("npm:"))
+' <<< "$global_tools")"
 
 # 実行中のPiが参照している旧インストールは削除しない。
 printf '==> updating Pi through mise\n'

@@ -26,7 +26,7 @@ SKILLS = "git:github.com/u7chan/agent-harness"
 PI_TOOL = "npm:@earendil-works/pi-coding-agent"
 HERDR_TOOL = "aqua:herdrdev/herdr"
 EXTRA_TOOLS = ("aqua:pnpm/pnpm", "bun")
-INVENTORY_ARGS = ["ls", "--global", "--json"]
+INVENTORY_ARGS = ["config", "ls", "--json"]
 
 
 @unittest.skipUnless(GIT and JQ, "git and jq are required for update tests")
@@ -86,13 +86,20 @@ from pathlib import Path
 import tomllib
 args = sys.argv[1:]
 record("mise", args)
-if args == ["ls", "--global", "--json"]:
+if args == ["config", "ls", "--json"]:
     if "TEST_INVENTORY_OUTPUT" in os.environ:
         print(os.environ["TEST_INVENTORY_OUTPUT"], end="")
     else:
-        tools = tomllib.loads(Path(os.environ["MISE_CONFIG_FILE"]).read_text())["tools"]
-        print(json.dumps({name: [{"installed": False}] for name in tools}))
+        config = Path(os.environ["MISE_CONFIG_FILE"])
+        tools = tomllib.loads(config.read_text())["tools"]
+        print(json.dumps([{"path": str(config.resolve()), "tools": list(tools)}]))
     sys.exit(int(os.environ.get("TEST_INVENTORY_STATUS", "0")))
+# 旧方式へ戻した場合の回帰検出用。実物mise同様、版解決失敗を警告だけで省略する。
+if args == ["ls", "--global", "--json"]:
+    tools = tomllib.loads(Path(os.environ["MISE_CONFIG_FILE"]).read_text())["tools"]
+    omitted = os.environ.get("TEST_OMITTED_TOOL")
+    print(json.dumps({name: [{"installed": False}] for name in tools if name != omitted}))
+    sys.exit(0)
 if args[:2] == ["upgrade", "--no-prune"]:
     if args[2:] == ["npm:@earendil-works/pi-coding-agent"]:
         sys.exit(int(os.environ.get("TEST_UPGRADE_STATUS", "0")))
@@ -304,6 +311,75 @@ class MyupdateTests(MyupdateFixture):
         ])
         self.assertEqual(self.config.read_bytes(), original)
 
+    def test_version_resolution_failure_cannot_silently_omit_declared_cli(self):
+        """版解決一覧から欠落するCLIも宣言から対象にし、更新失敗を成功扱いしない。"""
+        with self.config.open("a") as config:
+            config.write('"npm:prettier" = "3"\n')
+        self.env.update(TEST_OMITTED_TOOL="npm:prettier", TEST_FAILED_TOOL="npm:prettier")
+        self.settings.parent.mkdir(parents=True)
+        original = '{"theme":"custom"}\n'
+        self.settings.write_text(original)
+        result = self.run_update()
+        self.assertEqual(result.returncode, 5)
+        self.assertEqual(self.upgrades(), [
+            ["upgrade", "--no-prune", tool]
+            for tool in (PI_TOOL, HERDR_TOOL, *EXTRA_TOOLS, "npm:prettier")
+        ])
+        self.assertEqual(self.calls("mise")[0]["args"], INVENTORY_ARGS)
+        self.assertEqual(self.calls("pi"), [])
+        self.assertEqual(self.settings.read_text(), original)
+        self.assertFalse(self.lock.exists())
+        self.assertNotIn("all updates completed", result.stdout)
+
+    def test_declarations_from_other_configurations_are_not_update_targets(self):
+        """一覧に他の設定が含まれていても、指定グローバル設定以外は取り込まない。"""
+        other = self.home / "mise.toml"
+        other.write_text('[tools]\n"npm:unmanaged" = "latest"\n')
+        tools = list(tomllib.loads(self.config.read_text())["tools"])
+        self.env["TEST_INVENTORY_OUTPUT"] = json.dumps([
+            {"path": str(other), "tools": ["npm:unmanaged"]},
+            {"path": str(self.config), "tools": tools},
+        ])
+        self.assert_success(self.run_update())
+        self.assertEqual(self.upgrades(), [
+            ["upgrade", "--no-prune", tool] for tool in (PI_TOOL, HERDR_TOOL, *EXTRA_TOOLS)
+        ])
+
+    def test_symlinked_global_configuration_matches_physical_metadata_path(self):
+        """設定ファイルがシンボリックリンクでも、物理パスとの同一性で宣言を特定する。"""
+        target = self.root / "linked global config.toml"
+        self.config.rename(target)
+        self.config.symlink_to(target)
+        self.assert_success(self.run_update())
+        self.assertEqual(self.upgrades(), [
+            ["upgrade", "--no-prune", tool] for tool in (PI_TOOL, HERDR_TOOL, *EXTRA_TOOLS)
+        ])
+        self.assertTrue(self.config.is_symlink())
+
+    def test_missing_or_duplicate_global_metadata_stops_before_all_updates(self):
+        """指定設定が一覧にない場合や一意でない場合は、全更新前に停止する。"""
+        entry = {"path": str(self.config), "tools": [*EXTRA_TOOLS]}
+        for entries, message in (([], "not found"), ([entry, entry], "duplicate")):
+            with self.subTest(entries=entries):
+                self.log.unlink(missing_ok=True)
+                self.env["TEST_INVENTORY_OUTPUT"] = json.dumps(entries)
+                result = self.run_update()
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(message, result.stderr)
+                self.assertEqual([call["args"] for call in self.calls()], [INVENTORY_ARGS])
+                self.assertFalse(self.lock.exists())
+                self.assertNotIn("all updates completed", result.stdout)
+
+    def test_invalid_global_configuration_stops_before_all_updates(self):
+        """設定の構文エラーも一覧取得失敗として扱い、更新前に停止する。"""
+        self.config.write_text('[tools]\nbun = [')
+        result = self.run_update()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual([call["args"] for call in self.calls()], [INVENTORY_ARGS])
+        self.assertEqual(self.config.read_text(), '[tools]\nbun = [')
+        self.assertFalse(self.lock.exists())
+        self.assertNotIn("all updates completed", result.stdout)
+
     def test_empty_extra_selection_never_upgrades_all_tools(self):
         """対象が空でも引数なしのupgradeを呼ばず、全ツール更新を防ぐ。"""
         self.config.write_text(
@@ -329,7 +405,9 @@ class MyupdateTests(MyupdateFixture):
 
     def test_inventory_failure_stops_before_all_updates_and_releases_lock(self):
         """有効な一覧が出力されても取得失敗なら更新を始めない。"""
-        self.env.update(TEST_INVENTORY_STATUS="4", TEST_INVENTORY_OUTPUT='{"bun": []}')
+        self.env.update(TEST_INVENTORY_STATUS="4", TEST_INVENTORY_OUTPUT=json.dumps([
+            {"path": str(self.config), "tools": ["bun"]},
+        ]))
         result = self.run_update()
         self.assertEqual(result.returncode, 4)
         self.assertEqual([call["args"] for call in self.calls()], [INVENTORY_ARGS])
@@ -337,8 +415,11 @@ class MyupdateTests(MyupdateFixture):
         self.assertNotIn("all updates completed", result.stdout)
 
     def test_invalid_inventory_stops_before_all_updates(self):
-        """壊れたJSONやオブジェクト以外の一覧で更新範囲を拡大しない。"""
-        for output in ("", "{", "null", "[]", '"bun"', '{}\n{}', '{"bun": []}\ninvalid'):
+        """壊れたJSONや形式の異なる設定メタデータで更新範囲を拡大しない。"""
+        for output in ("", "{", "null", "{}", '"bun"', '[]\n[]', '[]\ninvalid',
+                       '[{}]', '[{"path":42,"tools":[]}]',
+                       '[{"path":"config.toml","tools":null}]',
+                       '[{"path":"config.toml","tools":[42]}]'):
             with self.subTest(output=output):
                 self.log.unlink(missing_ok=True)
                 self.env["TEST_INVENTORY_OUTPUT"] = output
