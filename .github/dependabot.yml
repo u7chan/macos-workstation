@@ -1,0 +1,17 @@
+version: 2
+updates:
+  # workflow の action 参照を更新する。lockfile は同じ PR 内で更新されるため、
+  # 更新 PR の diff で実行コードの変化を確認できる。
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 1
+    groups:
+      actions-minor-and-patch:
+        applies-to: version-updates
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
