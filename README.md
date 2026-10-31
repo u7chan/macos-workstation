@@ -251,3 +251,13 @@ mise uninstall --all
 ```
 
 This covers all installed tools, regardless of backend, and keeps both the applied configuration and the repository definitions. Running `./bootstrap.sh` reinstalls the configured tools.
+
+## CI
+
+Workflow action dependencies are locked by the [lockfile](.github/workflows/actions.lock), so a workflow keeps readable version tags while the runner executes the commit SHA recorded there. The lockfile covers every direct and transitive action dependency of the workflows in [`.github/workflows/`](.github/workflows).
+
+The lockfile is machine-generated; do not edit it by hand. Regenerate it with `gh actions-lock` (the GitHub CLI extension `github/gh-actions-lock`, installed at the pinned version used by the [tests workflow](.github/workflows/tests.yml)). When you add or change an action or a workflow, regenerate the lockfile in the same pull request. The `actions-lock` job in that workflow runs `gh actions-lock --verify` and fails when the lockfile does not cover the current workflow references, so a missing pin is caught before merge rather than at review time.
+
+[Dependabot](.github/dependabot.yml) opens weekly pull requests that update the action references and the lockfile together. Review a lockfile diff as a dependency update: `commit` is the code that will run, and a change to `owner_id` or `repo_id` means the reference repository itself changed.
+
+Out of scope for the lockfile: the runner image, container images, tools installed by `run:` steps, and reusable workflows. Reusable workflow calls are not covered, so a call site must be pinned to a full commit SHA; this repository currently makes none.
