@@ -21,7 +21,7 @@ jobs:
     steps:
       # サプライチェーン対策として、外部 Action の実行 SHA は .github/workflows/actions.lock で固定する。
       # workflow 側は可読な版タグを保ち、lockfile 未登録の参照は下の actions-lock job が失敗させる。
-      - uses: actions/checkout@v4.2.2
+      - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
       - uses: actions/setup-python@v5.6.0
@@ -68,7 +68,7 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
-      - uses: actions/checkout@v4.2.2
+      - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
       - name: Install gh-actions-lock
