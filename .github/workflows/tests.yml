@@ -31,6 +31,8 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install --yes --no-install-recommends git jq zsh
+          # 静的テストは workflow を YAML として構造で読むため、依存を明示的に固定する
+          python3 -m pip install --disable-pip-version-check --quiet 'pyyaml==6.0.3'
           archive="chezmoi_${CHEZMOI_VERSION}_linux_amd64.tar.gz"
           checksums="chezmoi_${CHEZMOI_VERSION}_checksums.txt"
           release="https://github.com/twpayne/chezmoi/releases/download/v${CHEZMOI_VERSION}"
@@ -46,6 +48,7 @@ jobs:
       - name: Verify test dependencies
         run: |
           python3 --version
+          python3 -c 'import yaml; print("PyYAML", yaml.__version__)'
           git --version
           jq --version
           chezmoi --version
