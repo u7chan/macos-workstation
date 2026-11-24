@@ -17,5 +17,10 @@ target={{ joinPath .chezmoi.destDir ".claude" "settings.json" | quote }}
   else
     .[0] | .theme = "dark" | .permissions.defaultMode = "auto"
     | .syncClaudeAiSkills = false | .syncClaudeAiPlugins = false
+    | .statusLine = {
+        type: "command",
+        command: "bash ~/.claude/statusline/statusline.sh",
+        refreshInterval: 1
+      }
   end
 '
