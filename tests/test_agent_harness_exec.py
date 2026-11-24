@@ -22,7 +22,10 @@ ENTRYPOINTS = (
     "review/scripts/validate-review-payload.sh",
     "review/scripts/recheck-state.sh",
     "review/scripts/recheck-state.py",
+    "scripts/skill-distribution/dist.sh",
 )
+# 起動前に検査するGNUコマンド。dist.shはmv -Tとreadlink -fに依存する。
+GNU_TOOLS = ("grep", "stat", "mktemp", "sort", "head", "mv", "readlink")
 
 
 class AgentHarnessExecTests(unittest.TestCase):
@@ -59,7 +62,7 @@ class AgentHarnessExecTests(unittest.TestCase):
             '#!/bin/bash\nprintf "%s\\n" "$TEST_OS"\nexit "$UNAME_STATUS"\n',
         )
         self.executable(self.bin / "jq", '#!/bin/bash\nexit "$JQ_STATUS"\n')
-        for name in ("grep", "stat", "mktemp", "sort", "head"):
+        for name in GNU_TOOLS:
             self.executable(
                 self.gnu / name,
                 '#!/bin/bash\n'
@@ -153,7 +156,7 @@ class AgentHarnessExecTests(unittest.TestCase):
         self.assertEqual(result.stderr, "harness error\n")
 
     def test_missing_gnu_dependency_stops_before_harness(self):
-        for name in ("grep", "stat", "mktemp", "sort", "head"):
+        for name in GNU_TOOLS:
             with self.subTest(name=name):
                 tool = self.gnu / name
                 tool.chmod(0o644)
@@ -193,6 +196,7 @@ class AgentHarnessExecTests(unittest.TestCase):
             ("pi",),
             ("/bin/bash", "-c", "true"),
             ("gh/scripts/gh.sh",),
+            ("scripts/skill-distribution/dist.sh", "update"),
             (self.ordinary_test,),
         ):
             with self.subTest(args=args):

@@ -51,7 +51,7 @@ The [`home/`](home/) directory is the source of truth for dotfiles. chezmoi maps
 | [`home/dot_config/mise/config.toml`](home/dot_config/mise/config.toml) | `~/.config/mise/config.toml` | Tool declarations and version constraints |
 | [`gpc`](home/dot_local/bin/executable_gpc) | `~/.local/bin/gpc` | Update a base branch or clean up the current merged PR branch |
 | [`myupdate`](home/dot_local/bin/executable_myupdate) | `~/.local/bin/myupdate` | Daily user-level tool, Pi package, and skill updates |
-| [Harness launcher](home/dot_local/bin/executable_agent-harness-exec) | `~/.local/bin/agent-harness-exec` | Process-local environment for upstream GitHub/review harnesses |
+| [Harness launcher](home/dot_local/bin/executable_agent-harness-exec) | `~/.local/bin/agent-harness-exec` | Process-local GNU environment for upstream GitHub/review harnesses and the skill distribution command |
 | [Harness invocation rule](home/private_dot_pi/private_agent/modify_private_AGENTS.md) | `~/.pi/agent/AGENTS.md` | Updates only a marked instruction block, preserving other instructions |
 | [Font archive declaration](home/.chezmoiexternal.toml) | User font directory declared in the file | Pinned font download, checksum, and included files |
 | [Ghostty configuration](home/Library/Application%20Support/com.mitchellh.ghostty/config) | `~/Library/Application Support/com.mitchellh.ghostty/config` | Ghostty font settings |
@@ -125,11 +125,45 @@ Automated tests cover update scope, failure propagation, and chezmoi deployment 
 
 ## Agent skills
 
-Bootstrap delegates Pi package and skill installation to the installed [`myupdate` command](home/dot_local/bin/executable_myupdate), which defines the managed package sources and skill branch. There is no separate bootstrap-only skill updater. Each run resolves the upstream skill branch head to a commit and installs that revision through pi; upstream skill changes do not require a change to this repository. The revision is printed and saved in pi's user package settings. Development checkouts are not used or modified, and unrelated pi settings and package resource filters are preserved.
+Skills from the upstream agent-harness repository are distributed with Git, not with Pi. [`myupdate`](home/dot_local/bin/executable_myupdate) runs the upstream distribution command (`scripts/skill-distribution/dist.sh`), which fetches upstream `main` into a bare mirror, exports one immutable release per commit, switches a `current` link to the served commit, and links each skill into the shared skill directories. The upstream [skill distribution document](https://github.com/u7chan/agent-harness/blob/main/_docs/skill-distribution.md) owns the layout, the rollout record, and the failure semantics. This repository only calls the command and does not reimplement fetching, gating, switching, linking, or recording. The command never calls Pi, Claude Code, or Codex, so skills install and update on a Mac without Pi.
 
-Exit all Pi sessions before running `myupdate` or bootstrap, then start Pi again after updates finish. See [Daily user-level updates](#daily-user-level-updates) for the normal workflow.
+- **Where:** the distribution root is `${AGENT_HARNESS_HOME:-${XDG_DATA_HOME:-$HOME/.local/share}/agent-harness}`. The shared skill directories that receive per-skill links are declared in [`myupdate`](home/dot_local/bin/executable_myupdate).
+- **First run:** `myupdate` creates the shared skill directories when they are missing, fetches upstream `main` only to obtain the distribution command, and installs through it. Later runs use the installed command. Bootstrap needs no separate skill step.
+- **Revision:** each run serves the head of upstream `main` as one full commit SHA. This repository holds no pinned SHA, so upstream skill changes need no change here. Only commits reachable from `main` are served; uncommitted or unmerged work in a development checkout is never visible, and development checkouts are neither used nor modified.
+- **Existing entries:** the command creates and removes only its own per-skill links. A real directory or a foreign symlink in a link position stops the update before anything is switched, and `myupdate` never passes the migration-only `--replace-links` flag. Other skills and files in the shared directories are left as they are.
+- **Failures:** a failed fetch, gate, verification, or link step keeps the previously served release and links, and `myupdate` exits non-zero without reporting success.
 
-Package installation alone does not provision skill-specific dependencies or guarantee macOS compatibility. Bootstrap provisions the limited GitHub/review dependencies declared in [`macports/ports.txt`](macports/ports.txt); other skill dependencies remain out of scope.
+Exit all Pi sessions before running `myupdate` or bootstrap, then start Pi again after updates finish. Restart other running agent sessions as well: a session keeps the skill list it loaded at startup, while on-demand reads follow the served release. See [Daily user-level updates](#daily-user-level-updates) for the normal workflow.
+
+Distribution alone does not provision skill-specific dependencies or guarantee macOS compatibility. Bootstrap provisions the limited GitHub/review dependencies and the GNU coreutils declared in [`macports/ports.txt`](macports/ports.txt); other skill dependencies remain out of scope.
+
+### Check the served revision and roll back
+
+The distribution command needs GNU `mv` and `readlink`, so run it through the [managed launcher](home/dot_local/bin/executable_agent-harness-exec), which adds the GNU directory to PATH for that process only:
+
+```sh
+dist="${AGENT_HARNESS_HOME:-${XDG_DATA_HOME:-$HOME/.local/share}/agent-harness}/current/scripts/skill-distribution/dist.sh"
+"$HOME/.local/bin/agent-harness-exec" "$dist" status
+"$HOME/.local/bin/agent-harness-exec" "$dist" verify --expect <full-sha>
+"$HOME/.local/bin/agent-harness-exec" "$dist" rollback <previous-full-sha>
+```
+
+`status` prints the served revision and exits non-zero unless a valid release is served, the last line of the rollout record names it, and no link has drifted. Rollback is the same operation as an update with an earlier commit. It works offline while that release is still on disk, and the target must be reachable from `main`. Because every `myupdate` run serves the head of `main` again, a rollback lasts until the next run; do not run `myupdate` while investigating. No Pi command is involved in any of these.
+
+### Migration from the Pi package registration
+
+Earlier versions installed the skills as a Pi git package. `myupdate` migrates in a fixed order: install or update the distribution and confirm its status, then remove the legacy registration with `pi remove --no-approve`, so a failed update never leaves a machine without skills. The removed entry, including any resource filters, is printed. Only the registration of the agent-harness git source (with or without a pinned ref) is removed. Other Pi packages, settings, authentication, and session history are untouched, a registration written in another form is left alone and may still report duplicate skills, and the Pi-managed clone stays on disk. Pi resource filters are not reproduced for the distributed skills. A link in a shared skill directory that points somewhere else, such as into the old Pi-managed clone, stops the update; inspect and remove it manually, then run `myupdate` again.
+
+### Harness discovery
+
+The distribution is the same for every harness, but each harness scans its own directories at its own depth; the [upstream table](https://github.com/u7chan/agent-harness/blob/main/_docs/skill-distribution.md#harness-scan-paths) owns those facts. Pi and Claude Code are wired through the directories declared in [`myupdate`](home/dot_local/bin/executable_myupdate). Codex CLI discovery has not been verified upstream, so Codex is not wired. To add it, measure its scan path first, then add its directory to that declaration; links are per skill, so its own system skills are not replaced.
+
+Automated tests use a stand-in for the distribution command and do not establish discovery. For a real-machine check after `myupdate`:
+
+1. Run `status` as above: expect `record-match=yes` and `links=ok`, and compare the revision with `git ls-remote https://github.com/u7chan/agent-harness.git refs/heads/main`.
+2. Start a new Pi session: each skill is listed once and there are no skill warnings.
+3. Start a new Claude Code session, or reload skills in a running one: the listed skills match the served release.
+4. Confirm that `command -v grep mv readlink` prints the same paths before and after running the distribution command through the launcher.
 
 ### GitHub and review harnesses
 
@@ -139,7 +173,7 @@ Use the [managed launcher](home/dot_local/bin/executable_agent-harness-exec) for
 "$HOME/.local/bin/agent-harness-exec" "$GH_SKILL_DIR/scripts/gh.sh" pr.read request.json
 ```
 
-The launcher adds the MacPorts GNU compatibility directory to PATH **only on macOS, only for the harness and its descendants**. It checks dependencies and fails without installing anything or falling back to incompatible commands. On other operating systems it leaves PATH unchanged. It delegates to the upstream harness without changing API authorization rules, arguments, stdin, working directory, or exit status.
+The launcher also runs the skill distribution command, which additionally needs GNU `mv` and `readlink`. It adds the MacPorts GNU compatibility directory to PATH **only on macOS, only for the harness and its descendants**. It checks dependencies and fails without installing anything or falling back to incompatible commands. On other operating systems it leaves PATH unchanged. It delegates to the upstream harness without changing API authorization rules, arguments, stdin, working directory, or exit status.
 
 Do not source the launcher, add its GNU directory to shell startup files, wrap a whole pi session, or run review-target tests through it. Run tests and ordinary commands separately in their normal environment. The entrypoint guard prevents accidental broad use; it is not a security boundary.
 
@@ -186,7 +220,7 @@ After starting the computer, exit all Pi sessions, including those in other term
 myupdate
 ```
 
-Bootstrap installs this command through chezmoi, prepares the mise runtimes, then invokes it once. The installed command works from any directory without the repository checkout. It updates Pi, Herdr, and Claude Code plus the declared global JavaScript tools through mise (within the global tool constraints), installs or refreshes the Pi packages declared in the [command](home/dot_local/bin/executable_myupdate), and resolves and installs the latest configured skill-branch commit. The command reads the global configuration's tool declarations through mise's configuration metadata, without resolving versions, and selects Claude Code, the supported JavaScript runtime/package-manager tools, and all `npm:` entries; adding another global npm CLI does not require editing the updater. Version-resolution failures cannot silently omit a declared CLI from this selection. Git packages that track a branch are refreshed to its latest commit on each run. Missing packages are installed on the first run; Pi owns package registration and preserves unrelated settings and resource filters. Existing extension installations are not removed or migrated; check package documentation for conflicts before loading overlapping extensions.
+Bootstrap installs this command through chezmoi, prepares the mise runtimes, then invokes it once. The installed command works from any directory without the repository checkout. It updates Pi, Herdr, and Claude Code plus the declared global JavaScript tools through mise (within the global tool constraints), installs or refreshes the Pi packages declared in the [command](home/dot_local/bin/executable_myupdate), and updates the shared agent skills through the upstream distribution command (see [Agent skills](#agent-skills)). The command reads the global configuration's tool declarations through mise's configuration metadata, without resolving versions, and selects Claude Code, the supported JavaScript runtime/package-manager tools, and all `npm:` entries; adding another global npm CLI does not require editing the updater. Version-resolution failures cannot silently omit a declared CLI from this selection. Git Pi packages that track a branch are refreshed to its latest commit on each run. Missing packages are installed on the first run; Pi owns package registration and preserves unrelated settings and resource filters. Existing extension installations are not removed or migrated; check package documentation for conflicts before loading overlapping extensions.
 
 The `--no-prune` safeguard retains old installations for every updated mise tool so their files remain available to running processes. It does not make live Pi package or skill updates safe, and old versions are not scheduled for automatic removal. Herdr servers and panes are left running; see [Herdr](#herdr) for the separate server-restart considerations. See [Remove old Pi versions](#remove-old-pi-versions) for optional manual cleanup.
 
