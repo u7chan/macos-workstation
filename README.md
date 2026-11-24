@@ -109,7 +109,7 @@ For a real-machine check after bootstrap, open a new login terminal and verify `
 
 ### Claude Code
 
-[Claude Code](https://code.claude.com/docs/en/setup) is installed as a native binary through the [mise configuration](home/dot_config/mise/config.toml) and updated by [`myupdate`](home/dot_local/bin/executable_myupdate). Anthropic has deprecated the npm installation. Avoid using Claude Code's self-updater on the mise-managed binary. Existing standalone installations can shadow it on PATH; inspect `command -v claude` and migrate them separately rather than deleting them automatically. Authentication and Claude Code settings are not managed here.
+[Claude Code](https://code.claude.com/docs/en/setup) is installed as a native binary through the [mise configuration](home/dot_config/mise/config.toml) and updated by [`myupdate`](home/dot_local/bin/executable_myupdate). Anthropic has deprecated the npm installation. Avoid using Claude Code's self-updater on the mise-managed binary. Existing standalone installations can shadow it on PATH; inspect `command -v claude` and migrate them separately rather than deleting them automatically. Authentication is not managed here. The [Claude settings merge](home/private_dot_claude/modify_private_settings.json.tmpl) applies only its declared settings, preserving other settings including the status line and hooks. Invalid existing JSON or a non-object permissions value stops application without overwriting the file.
 
 After bootstrap, open a new terminal and check `command -v claude` and `claude --version`; sign in separately as needed. Verify installation and updates on the actual Mac.
 
