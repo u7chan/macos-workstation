@@ -1,5 +1,6 @@
 # Status line: model / effort / ctx / prompt cache / rate limits
 # Input: Claude Code status line JSON on stdin. Run with: jq -jrf statusline.jq
+# カレントブランチは --arg branch <name> で渡す (省略時は Issue 番号を表示しない)。
 # アイコンに Nerd Font の私用領域の文字を使うため、表示側のフォントが必要。
 def R: "\u001b[0m";
 def MODEL_COLOR: "\u001b[0;35m";
@@ -13,6 +14,7 @@ def BLOCKS: " ▏▎▍▌▋▊▉█";
 def FULL_BLOCK: "█";
 def EMPTY_BLOCK: "░";
 def WIDTH: 5;
+def branch: $ARGS.named.branch // "";
 
 def effort_color($e):
   {low: "\u001b[38;2;100;200;100m",
@@ -32,7 +34,8 @@ def bar($pct):
   | ((($filled - $full) * 8) | floor) as $frac
   | (FULL_BLOCK * $full)
     + (if $full < WIDTH
-       then BLOCKS[$frac:$frac + 1] + (EMPTY_BLOCK * (WIDTH - $full - 1))
+       then (if $frac > 0 then BLOCKS[$frac:$frac + 1] else EMPTY_BLOCK end)
+            + (EMPTY_BLOCK * (WIDTH - $full - 1))
        else null end);
 
 def fmt($label; $pct):
@@ -50,9 +53,9 @@ def dur($sec):
 
 # 89000 -> "89k" / 1230000 -> "1.2M"
 def tokens($n):
-  if $n >= 1000000 then "\(($n / 100000 | round) / 10)M"
+  if ($n / 1000 | round) >= 1000 then "\(($n / 100000 | round) / 10)M"
   elif $n >= 1000 then "\($n / 1000 | round)k"
-  else "\($n)" end;
+  else "\($n | round)" end;
 
 def time_left($resets_at):
   if $resets_at == null then ""
@@ -103,8 +106,10 @@ def ISSUE_COLOR: "\u001b[38;2;90;170;255m";
 def PR_COLOR: "\u001b[38;2;130;200;110m";
 
 # OSC 8 ハイパーリンク。終端 ST は ESC + backslash なので \u005c で実バイトとして埋める
+# リンク先と表示文字列の C0/C1 制御文字は除去する (ESC 等でシーケンスを途中で閉じさせない)
+def clean: gsub("[\\x00-\\x1f\\x7f-\\x9f]"; "");
 def osc8($url; $text):
-  "\u001b]8;;\($url)\u001b\u005c\($text)\u001b]8;;\u001b\u005c";
+  "\u001b]8;;\($url | clean)\u001b\u005c\($text | clean)\u001b]8;;\u001b\u005c";
 
 # origin remote 由来の repo から https://host/owner/name を組む。無ければ null
 def repo_base:
@@ -119,15 +124,16 @@ def issues_path($base):
 
 # ブランチ名から issue 番号を拾う。誤検出を避けるため明示的な形だけを対象にする:
 #   #863 / issue-820 / issues/820 / fix/863-foo
+# fix/863-foo 形式は、後ろが数字だけの区切り (release/2025-01-x, release/1-2-0) を除く
 # issue(s) の直前はブランチ先頭か区切り文字に限定する (reissue-401 / tissue-42 を除外)
 # prefix 直後の数字は先頭ゼロを除外する (feature/02-parts-... を issue と誤認しないため)
 def issue_number($b):
   ([$b | scan("#([0-9]+)")] | .[0][0]?)
   // ([$b | scan("(?i)(?:^|[^a-z0-9])issues?[-_/]([0-9]+)")] | .[0][0]?)
-  // ([$b | scan("^[^/]+/([1-9][0-9]*)[-_]")] | .[0][0]?);
+  // ([$b | scan("^[^/]+/([1-9][0-9]{0,5})[-_](?![0-9]+(?:[-_/]|$))")] | .[0][0]?);
 
 def issue_part:
-  issue_number($branch) as $n
+  issue_number(branch) as $n
   | if $n == null then empty
     else repo_base as $base
     | "#\($n)" as $t
@@ -140,7 +146,7 @@ def issue_part:
 def pr_part:
   .pr.number as $n
   | if $n == null then empty
-    else "PR#\($n)" as $t
+    else "PR#\($n | tostring | clean)" as $t
     | PR_COLOR
       + (if .pr.url == null then $t else osc8(.pr.url; $t) end)
       + R
