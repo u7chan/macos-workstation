@@ -16,7 +16,7 @@ usage() {
   printf '%s\n' \
     'Usage: myupdate' \
     '' \
-    'Update mise-managed Pi and Herdr, global JavaScript tools, Pi packages, and skills.' \
+    'Update mise-managed Pi, Herdr, Claude Code, global JavaScript tools, Pi packages, and skills.' \
     'Run manually before starting work; no sudo or project-local updates.'
 }
 
@@ -92,7 +92,7 @@ done <<< "$config_entries"
 extra_tools="$(jq -r --arg pi "$PI_TOOL" '
   unique[]
   | select(. != $pi)
-  | select(. == "bun" or . == "pnpm" or . == "aqua:pnpm/pnpm" or startswith("npm:"))
+  | select(. == "bun" or . == "pnpm" or . == "aqua:pnpm/pnpm" or . == "aqua:anthropics/claude-code" or startswith("npm:"))
 ' <<< "$global_tools")"
 
 # 実行中のPiが参照している旧インストールは削除しない。
