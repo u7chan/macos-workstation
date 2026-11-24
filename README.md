@@ -148,7 +148,7 @@ dist="${AGENT_HARNESS_HOME:-${XDG_DATA_HOME:-$HOME/.local/share}/agent-harness}/
 "$HOME/.local/bin/agent-harness-exec" "$dist" rollback <previous-full-sha>
 ```
 
-`status` prints the served revision and exits non-zero unless a valid release is served, the last line of the rollout record names it, and no link has drifted. Rollback is the same operation as an update with an earlier commit. It works offline while that release is still on disk, and the target must be reachable from `main`. Because every `myupdate` run serves the head of `main` again, a rollback lasts until the next run; do not run `myupdate` while investigating. No Pi command is involved in any of these.
+The `dist` path uses the upstream default distribution root, the same one `myupdate` resolves; `AGENT_HARNESS_HOME` overrides it for both. `status` and `rollback` read the link directories recorded by the last `update`, which `myupdate` records from its own declaration, so they need no `--link-dir`. `status` prints the served revision and exits non-zero unless a valid release is served, the last line of the rollout record names it, and no link has drifted. Rollback is the same operation as an update with an earlier commit. It works offline while that release is still on disk, and the target must be reachable from `main`. Because every `myupdate` run serves the head of `main` again, a rollback lasts until the next run; do not run `myupdate` while investigating. No Pi command is involved in any of these.
 
 ### Migration from the Pi package registration
 

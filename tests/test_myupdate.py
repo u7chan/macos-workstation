@@ -41,6 +41,8 @@ from pathlib import Path
 args = sys.argv[1:]
 command = args[0] if args else ""
 record("dist", args, script=os.path.realpath(sys.argv[0]), root=os.environ.get("AGENT_HARNESS_HOME"))
+if "TEST_DIST_OCCUPY_LOCK" in os.environ:
+    (Path(os.environ["HOME"]) / ".local/state/macos-workstation/myupdate.lock/occupied").write_text("")
 status = int(os.environ.get("TEST_DIST_" + command.upper() + "_STATUS", "0"))
 if status:
     sys.stderr.write("error: dist fixture failure\\n")
@@ -703,9 +705,11 @@ class MyupdateTests(MyupdateFixture):
         self.assertNotIn("all updates completed", result.stdout)
 
     def test_legacy_removal_failures_are_reported_and_keep_distribution(self):
-        """旧登録の解除失敗は成功扱いにせず、検証済みの配布は維持する。"""
-        for env, message in (({"TEST_FAILED_REMOVE": LEGACY_SKILLS}, ""),
-                             ({"TEST_REMOVE_NOOP": "1"}, "still present")):
+        """旧登録の解除失敗は成功扱いにせず、検証済みの配布は維持し、復旧用の手動コマンドを示す。"""
+        for env, status, message in (
+            ({"TEST_FAILED_REMOVE": LEGACY_SKILLS}, 7, f"pi remove {LEGACY_SKILLS} --no-approve"),
+            ({"TEST_REMOVE_NOOP": "1"}, 1, "still present"),
+        ):
             with self.subTest(env=env):
                 self.log.unlink(missing_ok=True)
                 self.seed_settings(["npm:unrelated", LEGACY_SKILLS])
@@ -713,7 +717,7 @@ class MyupdateTests(MyupdateFixture):
                 result = self.run_update()
                 for key in env:
                     del self.env[key]
-                self.assertNotEqual(result.returncode, 0)
+                self.assertEqual(result.returncode, status)
                 self.assertIn(message, result.stderr)
                 self.assertTrue(self.installed_dist().exists())
                 self.assertEqual(json.loads(self.settings.read_text())["packages"][:2],
@@ -758,6 +762,41 @@ class MyupdateTests(MyupdateFixture):
         self.assertFalse(self.installed_dist().exists())
         self.assertEqual([call["root"] for call in self.calls("dist")], [str(custom)] * 4)
         self.assertEqual(self.calls("dist")[3]["script"], str(self.installed_dist(custom).resolve()))
+
+    def test_temporary_clone_is_removed_even_when_lock_release_fails(self):
+        """ロック解除（rmdir）が失敗しても、初回取得の一時ディレクトリを残さない。"""
+        self.env.update(TEST_DIST_OCCUPY_LOCK="1", TEST_DIST_UPDATE_STATUS="4")
+        result = self.run_update()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertTrue((self.lock / "occupied").exists())
+        self.assertEqual(self.bootstrap_leftovers(), [])
+
+    def test_relative_distribution_or_state_paths_stop_before_any_update(self):
+        """ランチャーとdist.shは絶対パスを要するため、相対指定はPiの更新前に拒否する。"""
+        for name, message in (("AGENT_HARNESS_HOME", "must be absolute"),
+                              ("XDG_DATA_HOME", "must be absolute"),
+                              ("XDG_STATE_HOME", "must be an absolute")):
+            with self.subTest(name=name):
+                self.env[name] = "relative/path"
+                result = self.run_update()
+                del self.env[name]
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(message, result.stderr)
+                self.assertEqual(self.calls(), [])
+                self.assertFalse(self.lock.exists())
+
+    def test_unusable_current_release_is_reported_as_repair(self):
+        """currentがあるのにdist.shが使えない場合は、黙って再構築せず修復することを表示する。"""
+        self.seed_installed_distribution()
+        self.installed_dist().chmod(0o644)
+        result = self.run_update()
+        self.assert_success(result)
+        self.assertIn("repairing agent skills", result.stdout)
+        self.assertIn("agent-skills-bootstrap.", self.calls("dist")[0]["script"])
+        self.log.unlink()
+        clean = self.run_update()
+        self.assert_success(clean)
+        self.assertNotIn("repairing", clean.stdout)
 
     def test_missing_launcher_stops_before_any_update(self):
         """GNU用ランチャーがなければ、更新を始める前に停止する。"""

@@ -10,9 +10,7 @@ PI_PACKAGES=(
   "git:github.com/u7chan/mypi@main"
 )
 # スキルの配布はPiから独立し、上流のdist.shが取得・検証・切替・linkを担う。
-# dist.shはmainだけを配るため、初回の取得元もmainに固定する。
 SKILLS_REPOSITORY="github.com/u7chan/agent-harness"
-SKILLS_BRANCH="main"
 # 旧方式でPiへ登録していたsource。移行時にこの登録だけを解除する。
 LEGACY_PI_SKILLS_SOURCE="git:${SKILLS_REPOSITORY}"
 # 共有スキルの参照位置。親ディレクトリだけをここで用意し、中のlinkはdist.shが管理する。
@@ -51,16 +49,21 @@ mise_bin="$(command -v mise)"
 # dist.shはGNUのmvとreadlinkを要するため、macOSではGNU用PATHを限定するランチャーで起動する。
 launcher="$HOME/.local/bin/agent-harness-exec"
 [[ -x $launcher ]] || die "run bootstrap first: missing $launcher"
+# ランチャーと上流のdist.shは絶対パスを要するため、Piの更新を始める前に確認する。
+skills_root="${AGENT_HARNESS_HOME:-${XDG_DATA_HOME:-$HOME/.local/share}/agent-harness}"
+[[ $skills_root == /* ]] || die "AGENT_HARNESS_HOME and XDG_DATA_HOME must be absolute paths: $skills_root"
 
 umask 077
 state_dir="${XDG_STATE_HOME:-$HOME/.local/state}/macos-workstation"
+[[ $state_dir == /* ]] || die "XDG_STATE_HOME must be an absolute path: $state_dir"
 mkdir -p "$state_dir"
 lock_dir="$state_dir/myupdate.lock"
 mkdir "$lock_dir" 2>/dev/null || die "update lock exists: $lock_dir; check for another myupdate process before removing a stale lock"
 bootstrap_dir=''
 cleanup() {
-  rmdir "$lock_dir"
+  # set -e下でrmdirが失敗しても一時取得物を残さないよう、先に削除する。
   [[ -z $bootstrap_dir ]] || rm -rf "$bootstrap_dir" || true
+  rmdir "$lock_dir"
 }
 trap cleanup EXIT
 trap 'exit 130' INT
@@ -136,7 +139,6 @@ for source in "${PI_PACKAGES[@]}"; do
 done
 
 # スキル配布の更新。Pi・Claude Codeなどのharness CLIは呼ばない。
-skills_root="${AGENT_HARNESS_HOME:-${XDG_DATA_HOME:-$HOME/.local/share}/agent-harness}"
 skills_dist="$skills_root/current/scripts/skill-distribution/dist.sh"
 link_args=()
 for dir in "${SKILL_LINK_DIRS[@]}"; do
@@ -147,7 +149,8 @@ done
 # 以後は配布先のdist.shを使うため、固定SHAを持たず、新しい版を古い版へ戻さない。
 bootstrap_agent_skills() {
   bootstrap_dir="$(mktemp -d "$state_dir/agent-skills-bootstrap.XXXXXX")"
-  GIT_TERMINAL_PROMPT=0 git clone --quiet --depth 1 --branch "$SKILLS_BRANCH" \
+  # dist.shはmainだけを配る。ここで取得するのはそのdist.shを得るためなので、ブランチはmain固定にする。
+  GIT_TERMINAL_PROMPT=0 git clone --quiet --depth 1 --branch main \
     "https://${SKILLS_REPOSITORY}.git" "$bootstrap_dir/repo"
   "$launcher" "$bootstrap_dir/repo/scripts/skill-distribution/dist.sh" update "${link_args[@]}"
   rm -rf "$bootstrap_dir"
@@ -161,6 +164,9 @@ update_agent_skills() {
     printf '==> updating agent skills (%s)\n' "$SKILLS_REPOSITORY"
     "$launcher" "$skills_dist" update "${link_args[@]}"
   else
+    if [[ -e $skills_root/current || -L $skills_root/current ]]; then
+      printf '==> repairing agent skills: %s has no usable dist.sh\n' "$skills_root/current"
+    fi
     printf '==> installing agent skills (%s)\n' "$SKILLS_REPOSITORY"
     bootstrap_agent_skills
   fi
@@ -180,7 +186,7 @@ legacy_pi_skills_sources() {
 # 同名スキルの重複を避けるため、新しい配布が検証済みになった後に旧登録だけを解除する。
 # 他のパッケージ・認証・履歴・設定には触れず、解除した登録内容を表示して復元できるようにする。
 remove_legacy_pi_skills() {
-  local sources source
+  local sources source status
   sources="$(legacy_pi_skills_sources)"
   while IFS= read -r source; do
     [[ -n $source ]] || continue
@@ -188,9 +194,15 @@ remove_legacy_pi_skills() {
     jq -c --arg source "$source" '
       (.packages // [])[] | select((if type == "string" then . else .source end) == $source)
     ' "$settings"
-    run_pi remove "$source" --no-approve
+    status=0
+    run_pi remove "$source" --no-approve || status=$?
+    if (( status != 0 )); then
+      # 新しい配布は有効なため、旧登録が残るとPiで同名スキルが二重に見える。
+      printf 'myupdate: could not remove the legacy Pi registration; run before starting Pi:\n  pi remove %q --no-approve\n' "$source" >&2
+      exit "$status"
+    fi
   done <<< "$sources"
-  [[ -z "$(legacy_pi_skills_sources)" ]] || die "legacy Pi registration is still present: $settings"
+  [[ -z "$(legacy_pi_skills_sources)" ]] || die "legacy Pi registration is still present in $settings; inspect it with: pi list --no-approve"
 }
 
 update_agent_skills
