@@ -15,46 +15,66 @@ JQ = shutil.which("jq")
 
 @unittest.skipUnless(CHEZMOI and JQ, "chezmoi and jq are required")
 class ClaudeSettingsTests(unittest.TestCase):
-    def test_merge_and_invalid_settings(self):
-        """管理対象以外を維持し、繰り返し適用と不正なJSONの停止を確認する。"""
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            home, source = root / "home", root / "source"
-            home.mkdir()
-            name = "private_dot_claude/modify_private_settings.json.tmpl"
-            (source / name).parent.mkdir(parents=True)
-            shutil.copyfile(ROOT / "home" / name, source / name)
-            config = root / "chezmoi.toml"
-            config.write_text("")
-            target = home / ".claude/settings.json"
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name)
+        self.home, self.source = self.root / "home", self.root / "source"
+        self.home.mkdir()
+        name = "private_dot_claude/modify_private_settings.json.tmpl"
+        (self.source / name).parent.mkdir(parents=True)
+        shutil.copyfile(ROOT / "home" / name, self.source / name)
+        self.config = self.root / "chezmoi.toml"
+        self.config.write_text("")
+        self.target = self.home / ".claude/settings.json"
 
-            def apply():
-                return subprocess.run(
-                    [CHEZMOI, "--source", str(source), "--destination", str(home),
-                     "--config", str(config), "--cache", str(root / "cache"),
-                     "--persistent-state", str(root / "state"), "apply", "--force", "--no-tty"],
-                    env={**os.environ, "HOME": str(home)}, capture_output=True, text=True,
-                )
+    def apply(self):
+        return subprocess.run(
+            [CHEZMOI, "--source", str(self.source), "--destination", str(self.home),
+             "--config", str(self.config), "--cache", str(self.root / "cache"),
+             "--persistent-state", str(self.root / "state"), "apply", "--force", "--no-tty"],
+            env={**os.environ, "HOME": str(self.home)}, capture_output=True, text=True,
+        )
 
-            result = apply()
+    def test_create(self):
+        """未作成の場合に管理対象を作成し、非公開の権限にする。"""
+        result = self.apply()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(self.target.read_text()), {
+            "theme": "dark", "permissions": {"defaultMode": "auto"},
+            "syncClaudeAiSkills": False, "syncClaudeAiPlugins": False,
+        })
+        self.assertEqual(self.target.stat().st_mode & 0o077, 0)
+
+    def test_merge_and_repeat(self):
+        """対象外の設定を保持し、繰り返し適用しても内容が変わらない。"""
+        self.target.parent.mkdir(parents=True)
+        self.target.write_text('{"permissions":{"allow":["Read"]},"statusLine":{"command":"custom"}}')
+        for _ in range(2):
+            result = self.apply()
             self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertEqual(json.loads(target.read_text()), {
-                "theme": "dark", "permissions": {"defaultMode": "auto"},
+            self.assertEqual(json.loads(self.target.read_text()), {
+                "theme": "dark", "permissions": {"allow": ["Read"], "defaultMode": "auto"},
                 "syncClaudeAiSkills": False, "syncClaudeAiPlugins": False,
+                "statusLine": {"command": "custom"},
             })
-            target.write_text('{"permissions":{"allow":["Read"]},"statusLine":{"command":"custom"}}')
-            for _ in range(2):
-                result = apply()
-                self.assertEqual(result.returncode, 0, result.stderr)
-                self.assertEqual(json.loads(target.read_text()), {
-                    "theme": "dark", "permissions": {"allow": ["Read"], "defaultMode": "auto"},
-                    "syncClaudeAiSkills": False, "syncClaudeAiPlugins": False,
-                    "statusLine": {"command": "custom"},
-                })
-            for invalid in ("", "not json", "{} {}", '{"permissions":null}'):
-                target.write_text(invalid)
-                self.assertNotEqual(apply().returncode, 0)
-                self.assertEqual(target.read_text(), invalid)
+
+    def test_invalid_settings_are_preserved(self):
+        """不正なJSONや権限設定は変更せず停止する。"""
+        self.target.parent.mkdir(parents=True)
+        for invalid in ("", "not json", "[]", "{} {}", '{"permissions":null}', '{"permissions":"bad"}'):
+            with self.subTest(invalid=invalid):
+                self.target.write_text(invalid)
+                self.assertNotEqual(self.apply().returncode, 0)
+                self.assertEqual(self.target.read_text(), invalid)
+
+    def test_dangling_symlink_is_preserved(self):
+        """リンク先がない設定ファイルを上書きせず停止する。"""
+        self.target.parent.mkdir(parents=True)
+        self.target.symlink_to("missing.json")
+        self.assertNotEqual(self.apply().returncode, 0)
+        self.assertTrue(self.target.is_symlink())
+        self.assertFalse((self.target.parent / "missing.json").exists())
 
 
 if __name__ == "__main__":

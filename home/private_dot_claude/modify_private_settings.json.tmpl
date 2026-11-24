@@ -3,17 +3,19 @@ set -euo pipefail
 
 # 空ファイルと未作成を区別し、既存の壊れた設定を上書きしない。
 target={{ joinPath .chezmoi.destDir ".claude" "settings.json" | quote }}
-if [[ ! -e "$target" && ! -L "$target" ]]; then
-  printf '{}\n' | jq '.theme = "dark" | .permissions.defaultMode = "auto" | .syncClaudeAiSkills = false | .syncClaudeAiPlugins = false'
-else
-  jq -s '
-    if length != 1 or (.[0] | type != "object") then
-      error("Claude settings must contain exactly one JSON object")
-    elif (.[0] | has("permissions") and (.permissions | type != "object")) then
-      error("Claude permissions must be an object")
-    else
-      .[0] | .theme = "dark" | .permissions.defaultMode = "auto"
-      | .syncClaudeAiSkills = false | .syncClaudeAiPlugins = false
-    end
-  '
-fi
+{
+  if [[ ! -e "$target" && ! -L "$target" ]]; then
+    printf '{}\n'
+  else
+    cat
+  fi
+} | jq -s '
+  if length != 1 or (.[0] | type != "object") then
+    error("Claude settings must contain exactly one JSON object")
+  elif (.[0] | has("permissions") and (.permissions | type != "object")) then
+    error("Claude permissions must be an object")
+  else
+    .[0] | .theme = "dark" | .permissions.defaultMode = "auto"
+    | .syncClaudeAiSkills = false | .syncClaudeAiPlugins = false
+  end
+'
