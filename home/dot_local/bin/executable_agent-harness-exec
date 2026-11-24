@@ -14,15 +14,17 @@ fail() {
 
 # Resolve this absolute path from the installed SKILL.md, not a dev checkout.
 # This is an invocation guard, not a security boundary or package resolver.
+# dist.sh is the skill distribution command; it relies on GNU mv -T and readlink -f.
 case "${1:-}" in
   /*/gh/scripts/gh.sh|\
   /*/review/scripts/validate-review-payload.sh|\
   /*/review/scripts/recheck-state.sh|\
-  /*/review/scripts/recheck-state.py) ;;
+  /*/review/scripts/recheck-state.py|\
+  /*/scripts/skill-distribution/dist.sh) ;;
   *)
     printf '%s\n' \
-      'Usage: agent-harness-exec <absolute installed gh/review entrypoint> [args...]' \
-      'Only gh.sh, validate-review-payload.sh, and recheck-state.sh/.py are supported.' \
+      'Usage: agent-harness-exec <absolute installed gh/review/skill-distribution entrypoint> [args...]' \
+      'Only gh.sh, validate-review-payload.sh, recheck-state.sh/.py, and skill-distribution/dist.sh are supported.' \
       'Do not use this launcher for pi, shells, or review-target tests.' >&2
     exit 2
     ;;
@@ -34,7 +36,7 @@ os="$(uname -s)" || fail 'could not determine the operating system with uname -s
 if [ "$os" = Darwin ]; then
   gnu_bin='/opt/local/libexec/gnubin'
   install_hint='Run macos-workstation/bootstrap.sh to install the declared dependencies.'
-  for tool in grep stat mktemp sort head; do
+  for tool in grep stat mktemp sort head mv readlink; do
     binary="$gnu_bin/$tool"
     [ -x "$binary" ] || fail "missing GNU $tool at $binary. $install_hint"
     version="$("$binary" --version 2>/dev/null)" || fail "unusable GNU $tool at $binary. $install_hint"

@@ -1,7 +1,9 @@
 """一時HOMEで日次更新の範囲、停止条件、既存設定の保持、bootstrapからの委譲を確認する。
 
-mise・Pi・Herdrの外部インストールは模擬し、Gitの参照解決とchezmoiによる配置には実物を使う。
-実ユーザーのツール・設定は変更せず、macOSでの実更新とExtensionのロードは別途確認する。
+mise・Pi・Herdrの外部インストールと上流のdist.sh（配布の取得・検証・切替・link）は模擬し、
+初回取得のgit cloneとchezmoiによる配置、GNU用PATHを限定するランチャーには実物を使う。
+実ユーザーのツール・設定は変更せず、macOSでの実更新、実スキルの配布、
+Pi・Claude Codeのスキル一覧への反映とExtensionのロードは別途確認する。
 """
 
 import json
@@ -23,10 +25,39 @@ CHEZMOI = shutil.which("chezmoi")
 MYPI = "git:github.com/u7chan/mypi@main"
 PACKAGES = ("npm:pi-web-access", "npm:@ogulcancelik/pi-session-recall", MYPI)
 SKILLS = "git:github.com/u7chan/agent-harness"
+LEGACY_SKILLS = f"{SKILLS}@{'1' * 40}"
+LAUNCHER = ROOT / "home/dot_local/bin/executable_agent-harness-exec"
+GNU_TOOLS = ("grep", "stat", "mktemp", "sort", "head", "mv", "readlink")
 PI_TOOL = "npm:@earendil-works/pi-coding-agent"
 HERDR_TOOL = "aqua:herdrdev/herdr"
 EXTRA_TOOLS = ("aqua:anthropics/claude-code", "bun", "npm:pnpm")
 INVENTORY_ARGS = ["config", "ls", "--json"]
+
+# 上流dist.shの模擬。実物の挙動（取得・main到達ゲート・切替・link）は上流のテストと実機で確認する。
+# 呼び出しを記録し、updateが成功したら配布先にdist.sh自身を置く（初回導入後は配布先のものが使われる）。
+DIST_STUB = '''
+import shutil
+from pathlib import Path
+args = sys.argv[1:]
+command = args[0] if args else ""
+record("dist", args, script=os.path.realpath(sys.argv[0]), root=os.environ.get("AGENT_HARNESS_HOME"))
+if "TEST_DIST_OCCUPY_LOCK" in os.environ:
+    (Path(os.environ["HOME"]) / ".local/state/macos-workstation/myupdate.lock/occupied").write_text("")
+status = int(os.environ.get("TEST_DIST_" + command.upper() + "_STATUS", "0"))
+if status:
+    sys.stderr.write("error: dist fixture failure\\n")
+    sys.exit(status)
+root = Path(os.environ.get("AGENT_HARNESS_HOME") or Path(os.environ["HOME"]) / ".local/share/agent-harness")
+installed = root / "current/scripts/skill-distribution/dist.sh"
+if command == "update":
+    print("state=" + ("already-current" if installed.exists() else "updated"))
+    if Path(__file__).resolve() != installed.resolve():
+        installed.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy(__file__, installed)
+elif command != "status":
+    sys.exit(99)
+print("revision=" + os.environ["TEST_DIST_REVISION"])
+'''
 
 
 @unittest.skipUnless(GIT and JQ, "git and jq are required for update tests")
@@ -62,11 +93,26 @@ class MyupdateFixture(unittest.TestCase):
             GIT_CONFIG_GLOBAL=str(self.root / "gitconfig"),
         )
         Path(self.env["GIT_CONFIG_GLOBAL"]).write_text("")
-        for name in ("mkdir", "rmdir", "cut", "bash"):
+        for name in ("mkdir", "rmdir", "rm", "mktemp", "bash"):
             (self.bin / name).symlink_to(shutil.which(name))
         (self.bin / "jq").symlink_to(JQ)
+        # 実物のランチャーをmacOS相当で動かす。GNU用ディレクトリだけを一時領域へ差し替える。
+        self.gnu = self.root / "gnubin"
+        for name in GNU_TOOLS:
+            self.executable(
+                self.gnu / name,
+                '#!/bin/bash\n[ "$1" = --version ] && echo "fixture (GNU coreutils)"\nexit 0\n',
+            )
+        self.executable(self.bin / "uname", '#!/bin/bash\necho Darwin\n')
+        self.launcher = self.home / ".local/bin/agent-harness-exec"
+        self.executable(self.launcher, self.launcher_source())
         self.remote = self.root / "skill remote"
         self.git("init", "-b", "main", str(self.remote))
+        self.executable(
+            self.remote / "scripts/skill-distribution/dist.sh",
+            self.python_source(DIST_STUB),
+        )
+        self.git("-C", str(self.remote), "add", "scripts/skill-distribution/dist.sh")
         self.commit_skills()
         self.git(
             "config", "--file", self.env["GIT_CONFIG_GLOBAL"],
@@ -74,6 +120,7 @@ class MyupdateFixture(unittest.TestCase):
             "https://github.com/u7chan/agent-harness.git",
         )
         self.revision = self.git("-C", str(self.remote), "rev-parse", "HEAD")
+        self.env["TEST_DIST_REVISION"] = self.revision
         self.write_command("git", '''
 record("git", sys.argv[1:])
 if "TEST_GIT_OUTPUT" in os.environ:
@@ -140,12 +187,23 @@ if args[0] == "--version":
 if args == ["list", "--no-approve"]:
     print("User packages:")
     sys.exit(0)
+settings = Path(os.environ.get("PI_CODING_AGENT_DIR", str(Path.home() / ".pi/agent"))) / "settings.json"
+if args[0] == "remove" and args[2:] == ["--no-approve"]:
+    if args[1] == os.environ.get("TEST_FAILED_REMOVE"):
+        sys.exit(7)
+    if "TEST_REMOVE_NOOP" not in os.environ:
+        data = json.loads(settings.read_text())
+        data["packages"] = [
+            package for package in data["packages"]
+            if (package if isinstance(package, str) else package["source"]) != args[1]
+        ]
+        settings.write_text(json.dumps(data) + "\\n")
+    sys.exit(0)
 if args[0] != "install" or args[2:] != ["--no-approve"]:
     sys.exit(99)
 source = args[1]
 if source == os.environ.get("TEST_FAILED_PACKAGE"):
     sys.exit(7)
-settings = Path(os.environ.get("PI_CODING_AGENT_DIR", str(Path.home() / ".pi/agent"))) / "settings.json"
 data = json.loads(settings.read_text()) if settings.exists() else {}
 packages = data.setdefault("packages", [])
 def identity(value):
@@ -161,17 +219,32 @@ settings.parent.mkdir(parents=True, exist_ok=True)
 settings.write_text(json.dumps(data) + "\\n")
 ''')
 
-    def write_python(self, path, body):
-        path.write_text(
+    @staticmethod
+    def python_source(body):
+        return (
             f"#!{sys.executable}\n"
             "import json, os, sys\n"
-            "def record(command, args):\n"
+            "def record(command, args, **extra):\n"
             "    with open(os.environ['TEST_CALLS'], 'a') as log:\n"
             "        log.write(json.dumps({'command': command, 'args': args,\n"
-            "            'cwd': os.getcwd(), 'config': os.environ.get('MISE_CONFIG_FILE')}) + '\\n')\n"
+            "            'cwd': os.getcwd(), 'config': os.environ.get('MISE_CONFIG_FILE'),\n"
+            "            'path': os.environ.get('PATH'), **extra}) + '\\n')\n"
             + body
         )
+
+    @staticmethod
+    def executable(path, content):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content)
         path.chmod(0o755)
+
+    def launcher_source(self):
+        source = LAUNCHER.read_text()
+        self.assertEqual(source.count("/opt/local/libexec/gnubin"), 1)
+        return source.replace("/opt/local/libexec/gnubin", str(self.gnu))
+
+    def write_python(self, path, body):
+        self.executable(path, self.python_source(body))
 
     def write_command(self, name, body):
         self.write_python(self.bin / name, body)
@@ -205,6 +278,31 @@ settings.write_text(json.dumps(data) + "\\n")
     def upgrades(self):
         return [call["args"] for call in self.calls("mise") if call["args"][0] == "upgrade"]
 
+    def removals(self):
+        return [call["args"][1] for call in self.calls("pi") if call["args"][0] == "remove"]
+
+    def link_args(self):
+        return ["--link-dir", str(self.home / ".agents/skills"),
+                "--link-dir", str(self.home / ".claude/skills")]
+
+    def seed_settings(self, packages):
+        self.settings.parent.mkdir(parents=True, exist_ok=True)
+        self.settings.write_text(json.dumps({"theme": "custom", "packages": packages}))
+        return self.settings.read_text()
+
+    def installed_dist(self, root=None):
+        base = root or self.home / ".local/share/agent-harness"
+        return base / "current/scripts/skill-distribution/dist.sh"
+
+    def seed_installed_distribution(self):
+        """配布先が導入済みの状態を、模擬dist.shの配置だけで作る。"""
+        target = self.installed_dist()
+        target.parent.mkdir(parents=True)
+        shutil.copy(self.remote / "scripts/skill-distribution/dist.sh", target)
+
+    def bootstrap_leftovers(self):
+        return sorted(path.name for path in self.lock.parent.glob("agent-skills-bootstrap.*"))
+
     def assert_success(self, result):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("all updates completed successfully", result.stdout)
@@ -222,7 +320,7 @@ class MyupdateTests(MyupdateFixture):
         """グローバルの対象だけを更新し、プロジェクト依存と他のツールは変更しない。"""
         result = self.run_update()
         self.assert_success(result)
-        self.assertEqual(self.installs(), [*PACKAGES, f"{SKILLS}@{self.revision}"])
+        self.assertEqual(self.installs(), list(PACKAGES))
         self.assertEqual([call["args"] for call in self.calls()[:3]], [
             INVENTORY_ARGS,
             ["upgrade", "--no-prune", PI_TOOL],
@@ -238,10 +336,11 @@ class MyupdateTests(MyupdateFixture):
         self.assertIn(self.revision, result.stdout)
 
     def test_repeated_runs_preserve_unmanaged_settings_and_resource_filters(self):
+        """旧agent-harness登録だけを解除し、他の設定・パッケージ・フィルターは繰り返しても保持する。"""
         existing = {
             "theme": "custom", "unmanaged": {"keep": True},
             "packages": ["npm:unrelated", {"source": PACKAGES[0], "extensions": ["selected.ts"]},
-                         {"source": f"{SKILLS}@{'1' * 40}", "skills": ["gh"]},
+                         {"source": LEGACY_SKILLS, "skills": ["gh"]},
                          {"source": f"{MYPI.rsplit('@', 1)[0]}@{'2' * 40}",
                           "extensions": ["extensions/index.ts"], "skills": []}],
         }
@@ -253,23 +352,26 @@ class MyupdateTests(MyupdateFixture):
         self.assertEqual(json.loads(self.settings.read_text()), first)
         self.assertEqual(first["unmanaged"], existing["unmanaged"])
         self.assertEqual(first["theme"], "custom")
-        self.assertEqual(first["packages"][0:2], existing["packages"][0:2])
-        self.assertEqual(first["packages"][2], {"source": f"{SKILLS}@{self.revision}", "skills": ["gh"]})
-        self.assertEqual(first["packages"][3], {
-            "source": MYPI, "extensions": ["extensions/index.ts"], "skills": [],
-        })
-        self.assertEqual(first["packages"][4:], [PACKAGES[1]])
-        self.assertEqual(self.installs(), [*PACKAGES, f"{SKILLS}@{self.revision}"] * 2)
+        self.assertEqual(first["packages"], [
+            "npm:unrelated",
+            {"source": PACKAGES[0], "extensions": ["selected.ts"]},
+            {"source": MYPI, "extensions": ["extensions/index.ts"], "skills": []},
+            PACKAGES[1],
+        ])
+        self.assertEqual(self.installs(), list(PACKAGES) * 2)
+        self.assertEqual(len(self.removals()), 1)
 
-    def test_resolves_latest_skill_commit_on_every_run(self):
+    def test_each_run_delegates_revision_selection_to_the_distribution_command(self):
+        """版の解決はdist.shに任せ、2回目以降は取得し直さず配布先のdist.shで更新する。"""
         self.assert_success(self.run_update())
-        self.commit_skills()
-        next_revision = self.git("-C", str(self.remote), "rev-parse", "HEAD")
-        self.assertNotEqual(self.revision, next_revision)
         result = self.run_update()
         self.assert_success(result)
-        self.assertEqual(self.installs()[-1], f"{SKILLS}@{next_revision}")
-        self.assertIn(next_revision, result.stdout)
+        self.assertEqual([call["args"][0] for call in self.calls("dist")],
+                         ["update", "status", "update", "status"])
+        self.assertEqual(len([c for c in self.calls("git") if c["args"][0] == "clone"]), 1)
+        self.assertEqual([c for c in self.calls("git") if c["args"][0] == "ls-remote"], [])
+        self.assertEqual(self.installs(), list(PACKAGES) * 2)
+        self.assertIn(self.revision, result.stdout)
 
     def test_upgrade_failure_stops_before_package_operations_and_releases_lock(self):
         self.env["TEST_UPGRADE_STATUS"] = "9"
@@ -471,7 +573,7 @@ class MyupdateTests(MyupdateFixture):
         self.env["TEST_HERDR_VERSION_STATUS"] = "6"
         result = self.run_update()
         self.assertEqual(result.returncode, 6)
-        self.assertEqual(self.installs(), [*PACKAGES, f"{SKILLS}@{self.revision}"])
+        self.assertEqual(self.installs(), list(PACKAGES))
         self.assertFalse(self.lock.exists())
         self.assertNotIn("all updates completed", result.stdout)
 
@@ -481,7 +583,7 @@ class MyupdateTests(MyupdateFixture):
         self.assertEqual(config["tools"][HERDR_TOOL], "latest")
 
     def test_package_failure_stops_remaining_updates_without_retry(self):
-        for source in (*PACKAGES, f"{SKILLS}@{self.revision}"):
+        for source in PACKAGES:
             with self.subTest(source=source):
                 self.log.unlink(missing_ok=True)
                 self.env["TEST_FAILED_PACKAGE"] = source
@@ -489,27 +591,221 @@ class MyupdateTests(MyupdateFixture):
                 self.assertEqual(result.returncode, 7)
                 self.assertEqual(self.installs()[-1], source)
                 self.assertEqual(self.installs().count(source), 1)
+                self.assertEqual(self.calls("dist"), [])
                 self.assertFalse(self.lock.exists())
                 self.assertNotIn("all updates completed", result.stdout)
 
-    def test_missing_skill_branch_stops_without_installing_skills(self):
-        self.git("-C", str(self.remote), "branch", "-m", "other")
+    def test_first_install_clones_main_then_installs_through_gnu_launcher(self):
+        """初回は上流mainを一時取得し、その中のdist.shで共有スキル置き場を作って状態を確認する。"""
+        agents = self.home / ".agents/skills"
+        claude = self.home / ".claude/skills"
+        (agents / "own skill").mkdir(parents=True)
+        (agents / "own skill/SKILL.md").write_text("mine\n")
+        claude.mkdir(parents=True)
+        (claude / "note.txt").write_text("keep\n")
         result = self.run_update()
-        self.assertNotEqual(result.returncode, 0)
-        self.assertEqual(self.installs(), list(PACKAGES))
+        self.assert_success(result)
+        clones = [c["args"] for c in self.calls("git") if c["args"][0] == "clone"]
+        self.assertEqual(len(clones), 1)
+        self.assertEqual(clones[0][:6], ["clone", "--quiet", "--depth", "1", "--branch", "main"])
+        self.assertEqual(clones[0][6], "https://github.com/u7chan/agent-harness.git")
+        update, status = self.calls("dist")
+        self.assertEqual(update["args"], ["update", *self.link_args()])
+        self.assertEqual(status["args"], ["status", *self.link_args()])
+        self.assertIn("agent-skills-bootstrap.", update["script"])
+        self.assertEqual(status["script"], str(self.installed_dist().resolve()))
+        self.assertEqual((agents / "own skill/SKILL.md").read_text(), "mine\n")
+        self.assertEqual((claude / "note.txt").read_text(), "keep\n")
+        self.assertEqual(self.bootstrap_leftovers(), [])
+        self.assertIn(self.revision, result.stdout)
+
+    def test_distribution_runs_only_with_gnu_path_and_never_exposes_it_elsewhere(self):
+        """GNU用PATHはdist.shとその子だけに限定し、他のコマンドや呼び出し元には広げない。"""
+        self.assert_success(self.run_update())
+        self.assert_success(self.run_update())
+        for call in self.calls():
+            directories = call["path"].split(os.pathsep)
+            if call["command"] == "dist":
+                self.assertEqual(directories[0], str(self.gnu))
+            else:
+                self.assertNotIn(str(self.gnu), directories, call)
+
+    def test_distribution_is_independent_of_pi_when_nothing_is_registered(self):
+        """旧登録がなければ、スキル配布はPiを一切呼ばず、Piはパッケージ更新と確認だけに使われる。"""
+        self.assert_success(self.run_update())
+        pi = [call["args"][0] for call in self.calls("pi")]
+        self.assertEqual(pi, ["install"] * len(PACKAGES) + ["--version", "list"])
+        calls = [call["command"] for call in self.calls()]
+        first_dist = calls.index("dist")
+        last_dist = len(calls) - 1 - calls[::-1].index("dist")
+        self.assertNotIn("pi", calls[first_dist:last_dist + 1])
+        self.assertNotIn("--no-link", SCRIPT.read_text())
+        self.assertNotIn("--replace-links", SCRIPT.read_text())
+
+    def test_legacy_pi_registration_is_removed_only_after_distribution_is_verified(self):
+        """検証済みの配布後に旧登録だけを解除し、他のパッケージ・設定・似た名前の登録は残す。"""
+        lookalike = "git:github.com/u7chan/agent-harness-other@abc"
+        self.seed_settings([
+            "npm:unrelated", LEGACY_SKILLS, lookalike,
+            {"source": f"{SKILLS}@{'3' * 40}", "skills": ["gh"]},
+            {"source": PACKAGES[0], "extensions": ["selected.ts"]},
+        ])
+        result = self.run_update()
+        self.assert_success(result)
+        settings = json.loads(self.settings.read_text())
+        self.assertEqual(settings["theme"], "custom")
+        self.assertEqual(settings["packages"], [
+            "npm:unrelated", lookalike,
+            {"source": PACKAGES[0], "extensions": ["selected.ts"]},
+            PACKAGES[1], PACKAGES[2],
+        ])
+        self.assertEqual(self.removals(), [LEGACY_SKILLS, f"{SKILLS}@{'3' * 40}"])
+        for call in self.calls("pi"):
+            if call["args"][0] == "remove":
+                self.assertEqual(call["args"][2:], ["--no-approve"])
+        order = [call["command"] + ":" + call["args"][0] for call in self.calls()
+                 if call["command"] in ("dist", "pi") and call["args"][0] != "--version"]
+        self.assertLess(order.index("dist:status"), order.index("pi:remove"))
+        self.assertIn('"skills":["gh"]', result.stdout)
+
+    def test_distribution_failure_keeps_legacy_registration_and_stops(self):
+        """配布の失敗は握りつぶさず、旧登録を残して停止し、一時取得物も残さない。"""
+        original = self.seed_settings([LEGACY_SKILLS])
+        for installed in (False, True):
+            with self.subTest(installed=installed):
+                shutil.rmtree(self.home / ".local/share", ignore_errors=True)
+                self.settings.write_text(original)
+                if installed:
+                    self.seed_installed_distribution()
+                self.log.unlink(missing_ok=True)
+                self.env["TEST_DIST_UPDATE_STATUS"] = "4"
+                result = self.run_update()
+                del self.env["TEST_DIST_UPDATE_STATUS"]
+                self.assertEqual(result.returncode, 4)
+                self.assertIn("dist fixture failure", result.stderr)
+                self.assertEqual([c["args"][0] for c in self.calls("dist")], ["update"])
+                self.assertEqual(self.removals(), [])
+                self.assertEqual(json.loads(self.settings.read_text())["packages"][0], LEGACY_SKILLS)
+                self.assertEqual(self.calls("herdr"), [])
+                self.assertEqual(self.bootstrap_leftovers(), [])
+                self.assertFalse(self.lock.exists())
+                self.assertNotIn("all updates completed", result.stdout)
+
+    def test_status_failure_keeps_legacy_registration_and_stops(self):
+        """更新後の整合確認に失敗した場合は、旧登録を解除せず成功と報告しない。"""
+        self.seed_settings([LEGACY_SKILLS])
+        self.env["TEST_DIST_STATUS_STATUS"] = "3"
+        result = self.run_update()
+        self.assertEqual(result.returncode, 3)
+        self.assertEqual([c["args"][0] for c in self.calls("dist")], ["update", "status"])
+        self.assertEqual(self.removals(), [])
+        self.assertIn(LEGACY_SKILLS, json.loads(self.settings.read_text())["packages"])
+        self.assertEqual(self.bootstrap_leftovers(), [])
         self.assertFalse(self.lock.exists())
         self.assertNotIn("all updates completed", result.stdout)
 
-    def test_invalid_or_failed_remote_response_does_not_install_skills(self):
-        for output, status in (("", "128"), ("invalid\trefs/heads/main\n", "0"),
-                               (f"{self.revision}\trefs/heads/main\n" * 2, "0")):
-            with self.subTest(output=output, status=status):
+    def test_legacy_removal_failures_are_reported_and_keep_distribution(self):
+        """旧登録の解除失敗は成功扱いにせず、検証済みの配布は維持し、復旧用の手動コマンドを示す。"""
+        for env, status, message in (
+            ({"TEST_FAILED_REMOVE": LEGACY_SKILLS}, 7, f"pi remove {LEGACY_SKILLS} --no-approve"),
+            ({"TEST_REMOVE_NOOP": "1"}, 1, "still present"),
+        ):
+            with self.subTest(env=env):
                 self.log.unlink(missing_ok=True)
-                self.env.update(TEST_GIT_OUTPUT=output, TEST_GIT_STATUS=status)
+                self.seed_settings(["npm:unrelated", LEGACY_SKILLS])
+                self.env.update(env)
                 result = self.run_update()
-                self.assertNotEqual(result.returncode, 0)
-                self.assertEqual(self.installs(), list(PACKAGES))
+                for key in env:
+                    del self.env[key]
+                self.assertEqual(result.returncode, status)
+                self.assertIn(message, result.stderr)
+                self.assertTrue(self.installed_dist().exists())
+                self.assertEqual(json.loads(self.settings.read_text())["packages"][:2],
+                                 ["npm:unrelated", LEGACY_SKILLS])
+                self.assertEqual(self.calls("herdr"), [])
                 self.assertFalse(self.lock.exists())
+                self.assertNotIn("all updates completed", result.stdout)
+
+    def test_failed_first_fetch_stops_before_distribution_and_registration_changes(self):
+        """初回取得の失敗（mainなし・取得エラー）は配布を始めず、旧登録と設定を保持する。"""
+        original = self.seed_settings([LEGACY_SKILLS, "npm:unrelated"])
+        for failure in ("missing-main", "fetch-error"):
+            with self.subTest(failure=failure):
+                self.log.unlink(missing_ok=True)
+                self.settings.write_text(original)
+                if failure == "missing-main":
+                    self.git("-C", str(self.remote), "branch", "-m", "other")
+                else:
+                    self.env.update(TEST_GIT_OUTPUT="", TEST_GIT_STATUS="128")
+                result = self.run_update()
+                if failure == "missing-main":
+                    self.git("-C", str(self.remote), "branch", "-m", "main")
+                else:
+                    del self.env["TEST_GIT_OUTPUT"], self.env["TEST_GIT_STATUS"]
+                self.assertNotEqual(result.returncode, 0)
+                self.assertEqual(self.calls("dist"), [])
+                self.assertEqual(self.removals(), [])
+                self.assertEqual(self.installs(), list(PACKAGES))
+                self.assertIn(LEGACY_SKILLS, json.loads(self.settings.read_text())["packages"])
+                self.assertFalse(self.installed_dist().exists())
+                self.assertEqual(self.bootstrap_leftovers(), [])
+                self.assertFalse(self.lock.exists())
+                self.assertNotIn("all updates completed", result.stdout)
+
+    def test_custom_distribution_root_is_respected(self):
+        """AGENT_HARNESS_HOMEを指定した場合は、その配布先のdist.shで更新する。"""
+        custom = self.root / "custom distribution"
+        self.env["AGENT_HARNESS_HOME"] = str(custom)
+        self.assert_success(self.run_update())
+        self.assert_success(self.run_update())
+        self.assertTrue(self.installed_dist(custom).exists())
+        self.assertFalse(self.installed_dist().exists())
+        self.assertEqual([call["root"] for call in self.calls("dist")], [str(custom)] * 4)
+        self.assertEqual(self.calls("dist")[3]["script"], str(self.installed_dist(custom).resolve()))
+
+    def test_temporary_clone_is_removed_even_when_lock_release_fails(self):
+        """ロック解除（rmdir）が失敗しても、初回取得の一時ディレクトリを残さない。"""
+        self.env.update(TEST_DIST_OCCUPY_LOCK="1", TEST_DIST_UPDATE_STATUS="4")
+        result = self.run_update()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertTrue((self.lock / "occupied").exists())
+        self.assertEqual(self.bootstrap_leftovers(), [])
+
+    def test_relative_distribution_or_state_paths_stop_before_any_update(self):
+        """ランチャーとdist.shは絶対パスを要するため、相対指定はPiの更新前に拒否する。"""
+        for name, message in (("AGENT_HARNESS_HOME", "must be absolute"),
+                              ("XDG_DATA_HOME", "must be absolute"),
+                              ("XDG_STATE_HOME", "must be an absolute")):
+            with self.subTest(name=name):
+                self.env[name] = "relative/path"
+                result = self.run_update()
+                del self.env[name]
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(message, result.stderr)
+                self.assertEqual(self.calls(), [])
+                self.assertFalse(self.lock.exists())
+
+    def test_unusable_current_release_is_reported_as_repair(self):
+        """currentがあるのにdist.shが使えない場合は、黙って再構築せず修復することを表示する。"""
+        self.seed_installed_distribution()
+        self.installed_dist().chmod(0o644)
+        result = self.run_update()
+        self.assert_success(result)
+        self.assertIn("repairing agent skills", result.stdout)
+        self.assertIn("agent-skills-bootstrap.", self.calls("dist")[0]["script"])
+        self.log.unlink()
+        clean = self.run_update()
+        self.assert_success(clean)
+        self.assertNotIn("repairing", clean.stdout)
+
+    def test_missing_launcher_stops_before_any_update(self):
+        """GNU用ランチャーがなければ、更新を始める前に停止する。"""
+        self.launcher.unlink()
+        result = self.run_update()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("run bootstrap first", result.stderr)
+        self.assertEqual(self.calls(), [])
+        self.assertFalse(self.lock.exists())
 
     def test_invalid_settings_stop_before_updates_and_preserve_original(self):
         self.settings.parent.mkdir(parents=True)
@@ -606,6 +902,10 @@ class MyupdateBootstrapTests(MyupdateFixture):
         bin_source = checkout / "home/dot_local/bin"
         bin_source.mkdir(parents=True)
         (bin_source / SCRIPT.name).write_bytes(SCRIPT.read_bytes())
+        (bin_source / LAUNCHER.name).write_text(self.launcher_source())
+        (bin_source / LAUNCHER.name).chmod(0o755)
+        # 配置前の状態から始め、ランチャーをchezmoiが導入することを確認する。
+        self.launcher.unlink()
         config_source = checkout / "home/dot_config/mise/config.toml"
         config_source.parent.mkdir(parents=True)
         config_source.write_bytes((ROOT / "home/dot_config/mise/config.toml").read_bytes())
@@ -653,8 +953,11 @@ os.execv(args[0], args)
         installed = self.home / ".local/bin/myupdate"
         self.assertEqual(installed.read_bytes(), SCRIPT.read_bytes())
         self.assertTrue(os.access(installed, os.X_OK))
+        self.assertEqual(self.launcher.read_text(), self.launcher_source())
+        self.assertTrue(os.access(self.launcher, os.X_OK))
         self.assertEqual(self.config.read_bytes(), (ROOT / "home/dot_config/mise/config.toml").read_bytes())
-        self.assertEqual(self.installs(), [*PACKAGES, f"{SKILLS}@{self.revision}"])
+        self.assertEqual(self.installs(), list(PACKAGES))
+        self.assertEqual([call["args"][0] for call in self.calls("dist")], ["update", "status"])
         calls = self.calls()
         apply_index = next(i for i, call in enumerate(calls) if call["command"] == "chezmoi")
         install_index = next(i for i, call in enumerate(calls) if call["command"] == "mise" and call["args"] == ["install"])
