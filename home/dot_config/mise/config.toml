@@ -6,6 +6,7 @@ bun = "latest"
 "npm:pnpm" = { version = "latest", allow_builds = ["pnpm"] }
 "npm:@earendil-works/pi-coding-agent" = "latest"
 "aqua:herdrdev/herdr" = "latest"
+"aqua:anthropics/claude-code" = "latest"
 "aqua:cli/cli" = "latest"
 "aqua:starship/starship" = "latest"
 

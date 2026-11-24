@@ -25,7 +25,7 @@ PACKAGES = ("npm:pi-web-access", "npm:@ogulcancelik/pi-session-recall", MYPI)
 SKILLS = "git:github.com/u7chan/agent-harness"
 PI_TOOL = "npm:@earendil-works/pi-coding-agent"
 HERDR_TOOL = "aqua:herdrdev/herdr"
-EXTRA_TOOLS = ("bun", "npm:pnpm")
+EXTRA_TOOLS = ("aqua:anthropics/claude-code", "bun", "npm:pnpm")
 INVENTORY_ARGS = ["config", "ls", "--json"]
 
 
@@ -105,7 +105,7 @@ if args[:2] == ["upgrade", "--no-prune"]:
         sys.exit(int(os.environ.get("TEST_UPGRADE_STATUS", "0")))
     if args[2:] == ["aqua:herdrdev/herdr"]:
         sys.exit(int(os.environ.get("TEST_HERDR_UPGRADE_STATUS", "0")))
-    if len(args) == 3 and (args[2] in ("bun", "pnpm", "aqua:pnpm/pnpm") or args[2].startswith("npm:")):
+    if len(args) == 3 and (args[2] in ("bun", "pnpm", "aqua:pnpm/pnpm", "aqua:anthropics/claude-code") or args[2].startswith("npm:")):
         sys.exit(5 if args[2] == os.environ.get("TEST_FAILED_TOOL") else 0)
     sys.exit(99)
 if args == ["install"]:
@@ -401,7 +401,7 @@ class MyupdateTests(MyupdateFixture):
         self.assert_success(self.run_update())
         self.assertEqual(self.upgrades(), [
             ["upgrade", "--no-prune", tool]
-            for tool in (PI_TOOL, HERDR_TOOL, "aqua:pnpm/pnpm", "bun", "pnpm")
+            for tool in (PI_TOOL, HERDR_TOOL, "aqua:anthropics/claude-code", "aqua:pnpm/pnpm", "bun", "pnpm")
         ])
 
     def test_inventory_failure_stops_before_all_updates_and_releases_lock(self):
@@ -459,6 +459,12 @@ class MyupdateTests(MyupdateFixture):
         self.assertEqual(tools["npm:pnpm"], {"version": "latest", "allow_builds": ["pnpm"]})
         self.assertNotIn("aqua:pnpm/pnpm", tools)
         self.assertNotIn("pnpm", tools)
+
+    def test_claude_code_is_declared_in_global_mise_configuration(self):
+        """ネイティブ版Claude Codeをmiseで導入し、更新対象に含める。"""
+        tools = tomllib.loads(self.config.read_text())["tools"]
+        self.assertEqual(tools["aqua:anthropics/claude-code"], "latest")
+        self.assertNotIn("npm:@anthropic-ai/claude-code", tools)
 
     def test_herdr_version_failure_does_not_report_success(self):
         """更新後のHerdr確認に失敗した場合も成功と報告しない。"""
@@ -584,7 +590,7 @@ class MyupdateTests(MyupdateFixture):
         result = self.run_update("--help")
         self.assertEqual(result.returncode, 0)
         self.assertIn("Usage: myupdate", result.stdout)
-        self.assertIn("Pi and Herdr", result.stdout)
+        self.assertIn("Claude Code", result.stdout)
         result = self.run_update("unexpected")
         self.assertEqual(result.returncode, 2)
         self.assertIn("Usage: myupdate", result.stderr)
